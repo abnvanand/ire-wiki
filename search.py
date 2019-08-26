@@ -1,11 +1,10 @@
+import logging as log
 import re
 
 from src import constants
 from src.constants import STOPWORDS_FILE_PATH
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
-
-import logging as log
 
 ONE_WORD_QUERY = "ONE_WORD_QUERY"
 FREE_TEXT_QUERY = "FREE_TEXT_QUERY"
@@ -19,12 +18,18 @@ class Search:
         self.docid_title_map = {}
 
     def load_docid_title(self, path):
-        with open(f"{path}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", 'r') as inf:
-            self.docid_title_map = eval(inf.read())
+        with open(f"{path}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", 'r') as fp:
+            self.docid_title_map = eval(fp.read())
 
     def load_term_termid(self, path):
-        with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as inf:
-            self.term_termid_map = eval(inf.read())
+        self.term_termid_map = eval(Helpers.uncompress(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}.bz2"))
+        # with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
+        #     self.term_termid_map = eval(fp.read())
+
+        # with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
+        #     for line in fp:
+        #         term, termid = line.split(":")
+        #         self.term_termid_map[term] = int(termid)
 
     def load_index(self, path):
         with open(f"{path}/{constants.POSTINGS_FILE_NAME}") as fp:
@@ -92,6 +97,9 @@ class Search:
                 docids |= set(self.get_postings(f"{term}+T") or [])  # Search in title text
                 docids |= set(self.get_postings(f"{term}+B") or [])  # Search in title text
                 docids |= set(self.get_postings(f"{term}+I") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}+C") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}+R") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}+L") or [])  # Search in title text
         return self.get_doc_names_from_ids(docids)
 
     def field_query(self, field_query):

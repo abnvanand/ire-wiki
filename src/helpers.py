@@ -22,12 +22,32 @@ class Helpers:
     @staticmethod
     def get_termid(term):
         return Helpers.term_termid_map[term]
-    
+
     @staticmethod
     def get_wiki_url(docid):
         docname = Helpers.docid_docname_map[docid]
         url = f"https://en.wikipedia.org/wiki/{docname.replace(' ', ' ')}"
         return url
+
+    @staticmethod
+    def compress(data, filename):
+        import bz2
+        output = bz2.BZ2File(f"{filename}", 'wb')
+        try:
+            output.write(data.encode("utf-8"))
+        finally:
+            output.close()
+
+    @staticmethod
+    def uncompress(filename):
+        import bz2
+        input_file = bz2.BZ2File(f'{filename}', 'rb')
+        try:
+            data = input_file.read()
+            data = data.decode()
+            return data
+        finally:
+            input_file.close()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
 infobox_pattern = "{{infobox"
+category_pattern = "\\[\\[category:(.*?)\\]\\]"
+references_pattern = "(?s){{[Cc]ite(.*?)}}"
 
 
 class Tokenizer:
@@ -39,12 +41,13 @@ class Tokenizer:
         # todo:
         self.extract_body(body_text)
         self.extract_infobox(body_text)
-        # extract_links(body_text)
-        # extract_categories(body_text)
-        # extract_references(body_text)
+        self.extract_categories(body_text)
+        self.extract_links(body_text)
+        self.extract_references(body_text)
         return self.termid_freq_map
 
     def extract_token(self, content, field_type):
+        # FIXME: will replace accented chars with spaces
         text = re.sub(r'[^a-z0-9 ]', ' ', content)  # replaces all non-alphanumeric chars by spaces
         # split to tokens
         tokens = re.split("[ ]", text)
@@ -73,10 +76,16 @@ class Tokenizer:
         body_text = re.sub("\\s(.*?)\\|(\\w+\\s)", " $2", body_text)
         body_text = re.sub("\\[.*?\\]", " ", body_text)
         body_text = re.sub("(?s)<!--.*?-->", "", body_text)  # Remove all NOTE tags
+        body_text = re.sub(references_pattern, "", body_text)  # remove Citations
         self.extract_token(body_text, "B")
 
     def extract_infobox(self, text):
         # find  all infoboxes
+        text = re.sub("&gt", ">", text)
+        text = re.sub("&lt;", "<", text)
+        text = re.sub("<ref.*?>.*?</ref>", " ", text)
+        text = re.sub("</?.*?>", " ", text)
+
         start = 0
         while True:
             start = text.find(infobox_pattern, start)
@@ -89,8 +98,6 @@ class Tokenizer:
                 # invalid infobox. eg: on page with title: "Wikipedia:Templates for discussion/Log/2014 May 2"
                 return
 
-            # log.debug("extracted infobox content: start:%d, end:%d, content %s", start, end, text[start:end])
-            # self.infoboxes.append(text[start:end])
             self.extract_token(text[start:end], "I")
 
             start = end + 1  # look for other infoboxes
@@ -112,3 +119,39 @@ class Tokenizer:
                 break
             search_pos = next_closing_pos + 2
         return end
+
+    def extract_categories(self, text):
+        pattern = re.compile(category_pattern, re.MULTILINE)
+        # TODO: Prefer finditer() over findall()
+        # for match in pattern.finditer(text, re.MULTILINE):
+        #    categories = match.group(1).split("|")  # some of these contain a | so split over it
+        #    self.extract_token(" ".join(categories), "C")
+        res = pattern.findall(text, re.MULTILINE)
+        self.extract_token(" ".join(res), "C")
+
+    def extract_references(self, text):
+        pattern = re.compile(references_pattern, re.MULTILINE)
+        refs = pattern.findall(text, re.MULTILINE)  # TODO: Prefer finditer() over findall()
+        self.extract_token(" ".join(refs), "R")
+
+    def extract_links(self, text):
+        # TODO:
+        links_start_match = re.search("==\\s?external links\\s?==", text)
+        links_end_match = re.search("\\[\\[category:", text)
+
+        if links_start_match is None:
+            return
+        links_start = links_start_match.start()
+        links_end = len(text) - 1 if links_end_match is None else links_end_match.start()
+
+        text = text[links_start:links_end]
+        # print("Links text", text)
+        links = re.findall("((?:http[s]?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|])", text,
+                           flags=re.MULTILINE)
+
+        # regex to remove junk
+        # regExp11 = re.compile(r"[~`!@#$%-^*+{\[}\]\|\\<>/?]", re.DOTALL)
+        # links = ' '.join(links)
+        # links = regExp11.sub(' ', links)
+        # print("links (((", links, ")))")
+        self.extract_token(" ".join(links), "L")

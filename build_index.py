@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict
 
@@ -5,9 +6,6 @@ from src import constants
 from src.helpers import Helpers
 from src.indexer import Indexer
 from src.parser import XMLParser
-from time import process_time
-
-import logging
 
 logging.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
                     level=logging.INFO)  # STOPSHIP
@@ -16,7 +14,7 @@ logging.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message
 DUMP_PATH = input(f"Enter dump path. (default: {constants.DEFAULT_DUMP_PATH})")
 if not DUMP_PATH:
     DUMP_PATH = constants.DEFAULT_DUMP_PATH
-INDEX_DIR = input(f"Enter index dir. (deafult:{constants.DEFAULT_INDEX_DIR})")
+INDEX_DIR = input(f"Enter index dir. (default: {constants.DEFAULT_INDEX_DIR})")
 if not INDEX_DIR:
     INDEX_DIR = constants.DEFAULT_INDEX_DIR
 
@@ -44,14 +42,17 @@ postings_list = defaultdict(list)
 for termid, docid in Indexer.termid_docid_list:
     postings_list[termid].append(docid)
 
-x_end = time.clock()
-print("Indexed in ", x_end - x_start)
 with open(f"{INDEX_DIR}/{constants.POSTINGS_FILE_NAME}", "w") as fp:  # format=> termid:docid1,docid2,docid3....\n
     for termid in postings_list:
         print(f"{termid}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(postings_list[termid])}", file=fp)
 
-with open(f"{INDEX_DIR}/{constants.TERM_ID_MAPPING_FILE_NAME}", "w") as fp:
-    fp.write(str(Helpers.term_termid_map))
+Helpers.compress(str(Helpers.term_termid_map), f"{constants.TERM_ID_MAPPING_FILE_NAME}.bz2")
+# with open(f"{INDEX_DIR}/{constants.TERM_ID_MAPPING_FILE_NAME}", "w") as fp:
+#   for term in Helpers.term_termid_map:
+#       print(f"{term}:{Helpers.term_termid_map[term]}", file=fp)
 
 with open(f"{INDEX_DIR}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", "w") as fp:
     fp.write(str(Helpers.docid_docname_map))
+
+x_end = time.clock()
+print("Indexed in ", x_end - x_start)
