@@ -136,14 +136,12 @@ class Search:
         return self.index.get(self.term_termid_map.get(extended_term))
 
 
-def test():
-    field_query = "t:mahatma b:gandhi"
-
-
 if __name__ == "__main__":
     srchobj = Search()
-    path = input("Enter index folder path: ")
-    if not path:
-        path = constants.DEFAULT_INDEX_DIR
+    import sys
 
-    srchobj.search_index(path)
+    path = sys.argv[1] if len(sys.argv) > 1 else constants.DEFAULT_INDEX_DIR
+    queryfile = sys.argv[2] if len(sys.argv) > 2 else constants.QUERY_FILE
+    outputfile = sys.argv[3] if len(sys.argv) > 3 else constants.OUTPUT_FILE
+
+    srchobj.search_index(path, queryfile, outputfile)
