@@ -6,9 +6,21 @@ from src.constants import STOPWORDS_FILE_PATH
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
+log.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
+                level=log.INFO)  # STOPSHIP
+
 ONE_WORD_QUERY = "ONE_WORD_QUERY"
 FREE_TEXT_QUERY = "FREE_TEXT_QUERY"
 FIELD_QUERY = "FIELD_QUERY"
+
+field_type_map = {
+    "title": "T",
+    "body": "B",
+    "infobox": "I",
+    "category": "C",
+    "ref": "R",
+    "link": "L",
+}
 
 
 class Search:
@@ -48,26 +60,37 @@ class Search:
         line = [stemmer.stem(word, 0, len(word) - 1) for word in line]
         return line
 
-    def search_index(self, path):
+    def search_index(self, path, queryfile, outputfile):
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
         self.load_index(path)
         self.load_term_termid(path)
         self.load_docid_title(path)
 
         log.debug("Index", self.index)
+        queryfp = open(queryfile, "r")
+        outputfp = open(outputfile, "w")
 
-        while True:
-            query = input("Enter search term: ")
-            if not query:
-                break
-
+        # Loop over each query
+        for query in queryfp:
+            results = []
             query_type = self.get_query_type(query)
             if query_type == ONE_WORD_QUERY:
-                print(self.one_word_query(query))
+                results = self.one_word_query(query)
             elif query_type == FREE_TEXT_QUERY:
-                print(self.free_text_query(query))
+                results = self.free_text_query(query)
             elif query_type == FIELD_QUERY:
-                print(self.field_query(query))
+                results = self.field_query(query)
+
+            results = list(results)
+            log.info("Results for query: %s", query.rstrip())
+            for result in results[:10]:  # print only 10 results
+                log.info(result)
+                print(result, file=outputfp)
+            print(file=outputfp)
+            log.info("")
+
+        queryfp.close()
+        outputfp.close()
 
     def one_word_query(self, query):
         terms = self.get_terms(query)
@@ -103,17 +126,40 @@ class Search:
         return self.get_doc_names_from_ids(docids)
 
     def field_query(self, field_query):
-        # t:Sachin b:Tendulkar c:Sports
-        docids = set()
+        FIELD_QUERY_OPERATOR = "OR"  # TODO: decide OR vs AND
 
+        # title:gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
+        docids = set()
         field_terms = field_query.split()  # will now contain ['t:Sachin', 'b:Tendulkar', ...]
 
-        for extended_term in field_terms:
-            field_type, query = extended_term.split(":")  # t:Sachin tendular will be split to t and Sachin tendulkar
+        if FIELD_QUERY_OPERATOR == "OR":
+            for extended_term in field_terms:
+                ft, query = extended_term.split(":")
+                terms = self.get_terms(query)
+                for term in terms:
+                    if not term.isspace():
+                        docids |= set(
+                            self.get_postings(f"{term}+{field_type_map[ft].upper()}") or [])
+
+        else:  # use AND instead of OR
+            # Logic: fill docids of first field type,
+            # then perform intersection with subsequent field types
+            ft, query = field_terms[0].split(":")
             terms = self.get_terms(query)
             for term in terms:
                 if not term.isspace():
-                    docids |= set(self.get_postings(f"{term}+{field_type.upper()}") or [])  # Search in title text
+                    # Perform OR
+                    docids |= set(
+                        self.get_postings(f"{term}+{field_type_map[ft].upper()}") or [])
+
+            for extended_term in field_terms[1:]:
+                ft, query = extended_term.split(":")
+                terms = self.get_terms(query)
+                for term in terms:
+                    if not term.isspace():
+                        # Perform AND (intersection)
+                        docids.intersection_update(set(
+                            self.get_postings(f"{term}+{field_type_map[ft].upper()}") or []))
 
         return self.get_doc_names_from_ids(docids)
 
