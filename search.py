@@ -2,7 +2,7 @@ import logging as log
 import re
 
 from src import constants
-from src.constants import STOPWORDS_FILE_PATH
+from src.constants import STOPWORDS_FILE_PATH, FIELD_QUERY_OPERATOR
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
@@ -126,8 +126,7 @@ class Search:
         return self.get_doc_names_from_ids(docids)
 
     def field_query(self, field_query):
-        FIELD_QUERY_OPERATOR = "OR"  # TODO: decide OR vs AND
-
+        # TODO: decide OR vs AND
         # title:gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
         docids = set()
         field_terms = field_query.split()  # will now contain ['t:Sachin', 'b:Tendulkar', ...]

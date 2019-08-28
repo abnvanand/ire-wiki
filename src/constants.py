@@ -12,3 +12,5 @@ POS_SEP = ""
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"
+
+FIELD_QUERY_OPERATOR = "OR"
