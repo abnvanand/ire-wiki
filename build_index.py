@@ -1,4 +1,5 @@
 import logging
+import sys
 import time
 from collections import defaultdict
 
@@ -10,13 +11,10 @@ from src.parser import XMLParser
 logging.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
                     level=logging.INFO)  # STOPSHIP
 
-# TODO: Get as commandline args
-DUMP_PATH = input(f"Enter dump path. (default: {constants.DEFAULT_DUMP_PATH})")
-if not DUMP_PATH:
-    DUMP_PATH = constants.DEFAULT_DUMP_PATH
-INDEX_DIR = input(f"Enter index dir. (default: {constants.DEFAULT_INDEX_DIR})")
-if not INDEX_DIR:
-    INDEX_DIR = constants.DEFAULT_INDEX_DIR
+logging.debug("sys.argv %s", sys.argv)
+
+DUMP_PATH = sys.argv[1] if len(sys.argv) > 1 else constants.DEFAULT_DUMP_PATH
+INDEX_DIR = sys.argv[2] if len(sys.argv) > 2 else constants.DEFAULT_INDEX_DIR
 
 # TODO: Steps[Build][Integrate]
 # 1. Parsing[][]
