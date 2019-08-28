@@ -150,8 +150,7 @@ class Tokenizer:
                            flags=re.MULTILINE)
 
         # regex to remove junk
-        # regExp11 = re.compile(r"[~`!@#$%-^*+{\[}\]\|\\<>/?]", re.DOTALL)
+        # junks_pattern = re.compile(r"[~`!#@$-%^*+{\[}\]\|\\<>/?]", re.DOTALL)
         # links = ' '.join(links)
-        # links = regExp11.sub(' ', links)
-        # print("links (((", links, ")))")
+        # links = junks_pattern.sub(' ', links)
         self.extract_token(" ".join(links), "L")
