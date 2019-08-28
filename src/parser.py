@@ -1,9 +1,8 @@
-import xml.sax
 import logging as log
-from collections import defaultdict
+import xml.sax
 
 from src.helpers import Helpers
-from src.indexer import Indexer, INDEX_BLOCK_MAX_SIZE
+from src.indexer import Indexer
 from src.tokenizer import Tokenizer
 
 
