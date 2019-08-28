@@ -46,7 +46,7 @@ with open(f"{INDEX_DIR}/{constants.POSTINGS_FILE_NAME}", "w") as fp:  # format=>
     for termid in postings_list:
         print(f"{termid}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(postings_list[termid])}", file=fp)
 
-Helpers.compress(str(Helpers.term_termid_map), f"{constants.TERM_ID_MAPPING_FILE_NAME}.bz2")
+Helpers.compress(str(Helpers.term_termid_map), f"{INDEX_DIR}/{constants.TERM_ID_MAPPING_FILE_NAME}.bz2")
 # with open(f"{INDEX_DIR}/{constants.TERM_ID_MAPPING_FILE_NAME}", "w") as fp:
 #   for term in Helpers.term_termid_map:
 #       print(f"{term}:{Helpers.term_termid_map[term]}", file=fp)
