@@ -54,7 +54,8 @@ class Tokenizer:
         tokens = re.split("[ ]", text)
 
         # stopwords removal
-        tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
+        # tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
+        tokens = set(tokens) - Helpers.get_stopwords()
 
         # stemming
         stemmer = PorterStemmer()
