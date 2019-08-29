@@ -24,7 +24,7 @@ INDEX_DIR = sys.argv[2] if len(sys.argv) > 2 else constants.DEFAULT_INDEX_DIR
 # 5. Stemming[][]
 # 6. Inverted Index Creation[][]
 # 7. Field queries
-x_start = time.clock()
+x_start = time.process_time()
 
 Helpers.load_stopwords(constants.STOPWORDS_FILE_PATH)
 logging.debug("AppGlobals.stopwords", Helpers.stopwords)
@@ -52,5 +52,5 @@ Helpers.compress(str(Helpers.term_termid_map), f"{INDEX_DIR}/{constants.TERM_ID_
 with open(f"{INDEX_DIR}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", "w") as fp:
     fp.write(str(Helpers.docid_docname_map))
 
-x_end = time.clock()
+x_end = time.process_time()
 print("Indexed in ", x_end - x_start)
