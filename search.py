@@ -34,14 +34,13 @@ class Search:
             self.docid_title_map = eval(fp.read())
 
     def load_term_termid(self, path):
-        self.term_termid_map = eval(Helpers.uncompress(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}.bz2"))
         # with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
         #     self.term_termid_map = eval(fp.read())
 
-        # with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
-        #     for line in fp:
-        #         term, termid = line.split(":")
-        #         self.term_termid_map[term] = int(termid)
+        with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
+            for line in fp:
+                term, termid = line.split(":")
+                self.term_termid_map[term] = int(termid)
 
     def load_index(self, path):
         with open(f"{path}/{constants.POSTINGS_FILE_NAME}") as fp:
