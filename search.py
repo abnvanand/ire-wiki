@@ -105,9 +105,9 @@ class Search:
         # import ipdb
         # ipdb.set_trace()
 
-        docids |= set(self.get_postings(f"{term}+T") or [])  # Search in title text
-        docids |= set(self.get_postings(f"{term}+B") or [])  # Search in title text
-        docids |= set(self.get_postings(f"{term}+I") or [])  # Search in title text
+        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}T") or [])  # Search in title text
+        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}B") or [])  # Search in title text
+        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}I") or [])  # Search in title text
         # TODO: add search in other fields
 
         return self.get_doc_names_from_ids(docids)
@@ -117,12 +117,12 @@ class Search:
         docids = set()
         for term in terms:
             if not term.isspace():
-                docids |= set(self.get_postings(f"{term}+T") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}+B") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}+I") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}+C") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}+R") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}+L") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}T") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}B") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}I") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}C") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}R") or [])  # Search in title text
+                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}L") or [])  # Search in title text
         return self.get_doc_names_from_ids(docids)
 
     def field_query(self, field_query):
@@ -138,7 +138,7 @@ class Search:
                 for term in terms:
                     if not term.isspace():
                         docids |= set(
-                            self.get_postings(f"{term}+{field_type_map[ft].upper()}") or [])
+                            self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or [])
 
         else:  # use AND instead of OR
             # Logic: fill docids of first field type,
@@ -149,7 +149,7 @@ class Search:
                 if not term.isspace():
                     # Perform OR
                     docids |= set(
-                        self.get_postings(f"{term}+{field_type_map[ft].upper()}") or [])
+                        self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or [])
 
             for extended_term in field_terms[1:]:
                 ft, query = extended_term.split(":")
@@ -158,7 +158,7 @@ class Search:
                     if not term.isspace():
                         # Perform AND (intersection)
                         docids.intersection_update(set(
-                            self.get_postings(f"{term}+{field_type_map[ft].upper()}") or []))
+                            self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or []))
 
         return self.get_doc_names_from_ids(docids)
 

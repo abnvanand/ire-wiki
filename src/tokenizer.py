@@ -1,6 +1,7 @@
 import re
 from collections import defaultdict
 
+from src import constants
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
@@ -53,7 +54,7 @@ class Tokenizer:
         tokens = re.split("[ ]", text)
 
         # stopwords removal
-        tokens = [term for term in tokens if term not in Helpers.stopwords and not term.isspace()]
+        tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
 
         # stemming
         stemmer = PorterStemmer()
@@ -61,7 +62,7 @@ class Tokenizer:
         # Add term to global dict
         # add no of occurrences in current doc in a map
         for term in terms:
-            term_with_field = f"{term}+{field_type}"
+            term_with_field = f"{term}{constants.FIELD_SEP}{field_type}"
             Helpers.addto_term_termid_map(term_with_field)
             termid = Helpers.get_termid(term_with_field)
             self.termid_freq_map[termid] += 1
