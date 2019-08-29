@@ -7,4 +7,4 @@ path_to_index_folder=$1;
 path_to_input_query_file=$2;
 path_to_output_file=$3;
 
-python search.py $path_to_index_folder $path_to_input_query_file $path_to_output_file
+python search.py "$path_to_index_folder" "$path_to_input_query_file" "$path_to_output_file"
