@@ -33,10 +33,11 @@ class WikipediaHandler(xml.sax.ContentHandler):
         if tag == "title":
             self.title = ""  # reset for new title
         elif tag == "text":
-            self.text = ""  # reset for new text
+            self.text.clear()  # reset for new text
         elif tag == "revision":
             self.insideRevision = True
         elif tag == "id":
+            self.id = ""
             pass
 
     def endElement(self, tag):
@@ -54,7 +55,7 @@ class WikipediaHandler(xml.sax.ContentHandler):
 
             Helpers.docid_docname_map[docid] = self.tokenizer.get_title()
 
-            terms = self.tokenizer.tokenize(self.text)
+            terms = self.tokenizer.tokenize(''.join(self.text))
 
             # Control reaches here one for every page. (Precisely when the page ends)
             # So this is a good place to build a term docid mapping
@@ -82,12 +83,12 @@ class WikipediaHandler(xml.sax.ContentHandler):
         or they may split it into several chunks;
         """
         if self.tag == "title":
-            self.title = content
+            self.title += content
         elif self.tag == "text":
             # Using append instead of assignment to handle case where text is received in multiple chunks
             self.text += content
         elif self.tag == "id" and not self.insideRevision:
-            self.id = content
+            self.id += content
 
     def endDocument(self):
         """Receive notification of the end of a document."""
