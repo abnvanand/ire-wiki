@@ -130,22 +130,28 @@ class SPIMI:
             log.debug("Reading into memory %s", block_fp.name)
             # FIXME: next() may raise StopIterationException if READ_BUF_SIZE exceeds available number of lines
             for _ in range(READ_BUFFER_SIZE):
-                minheap.append((next(block_fp), block_idx))
+                line = next(block_fp)
+                minheap.append((line.rstrip("\n"), block_idx))
                 remaining_lines[block_idx] += 1
 
         heapq.heapify(minheap)  # Convert list to minheap
         log.debug("minheap currently after init: %s", minheap)
 
-        write_buffer = []
+        write_buffer = OrderedDict()
 
         while minheap:  # while heap is not empty
             line, block_idx = heapq.heappop(minheap)
 
             # log.debug("minheap currently after pop: %s", minheap)
-            write_buffer.append(line)
+            term, docids = line.split(":", 1)
+            docids = docids.split(",")
+            write_buffer[term] = write_buffer.get(term, []) + docids
 
             if len(write_buffer) >= WRITE_BUFFER_SIZE:
-                write_fp.write("||".join(write_buffer))  # Flush to index file
+                for term in write_buffer:
+                    # Flush to index file
+                    write_fp.write(
+                        f"{term}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(write_buffer[term])}\n")
                 write_buffer.clear()
 
             remaining_lines[block_idx] -= 1
@@ -157,7 +163,7 @@ class SPIMI:
                     for _ in range(READ_BUFFER_SIZE):
                         newElem = next(block_fps[block_idx])
                         # log.debug("newElem: %s", newElem)
-                        heapq.heappush(minheap, (newElem, block_idx))
+                        heapq.heappush(minheap, (newElem.rstrip("\n"), block_idx))
                         remaining_lines[block_idx] += 1
                         # log.debug("minheap currently after push: %s", minheap)
                 except StopIteration:
@@ -165,7 +171,10 @@ class SPIMI:
 
         # Minheap empty but write buffer may have some items
         if write_buffer:
-            write_fp.write("\n".join(str(write_buffer)))
+            for term in write_buffer:
+                # Flush to index file
+                write_fp.write(
+                    f"{term}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(write_buffer[term])}\n")
 
         # Close files
         write_fp.close()
