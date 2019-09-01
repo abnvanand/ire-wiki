@@ -26,29 +26,19 @@ field_type_map = {
 class Search:
     def __init__(self):
         self.index = {}
-        self.term_termid_map = {}
         self.docid_title_map = {}
 
     def load_docid_title(self, path):
         with open(f"{path}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", 'r') as fp:
             self.docid_title_map = eval(fp.read())
 
-    def load_term_termid(self, path):
-        # with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
-        #     self.term_termid_map = eval(fp.read())
-
-        with open(f"{path}/{constants.TERM_ID_MAPPING_FILE_NAME}", 'r') as fp:
-            for line in fp:
-                term, termid = line.split(":")
-                self.term_termid_map[term] = int(termid)
-
     def load_index(self, path):
         with open(f"{path}/{constants.POSTINGS_FILE_NAME}") as fp:
             for line in fp:
                 line = line.strip()
-                termid, postings = line.split(constants.TERM_POSTINGS_SEP)
+                term, postings = line.split(constants.TERM_POSTINGS_SEP)
                 postings = [int(x) for x in postings.split(constants.DOCIDS_SEP)]
-                self.index[int(termid)] = postings
+                self.index[term] = postings
 
     def get_terms(self, line):
         line = line.lower()
@@ -62,7 +52,6 @@ class Search:
     def search_index(self, path, queryfile, outputfile):
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
         self.load_index(path)
-        self.load_term_termid(path)
         self.load_docid_title(path)
 
         log.debug("Index", self.index)
@@ -177,7 +166,7 @@ class Search:
         return docnames
 
     def get_postings(self, extended_term):
-        return self.index.get(self.term_termid_map.get(extended_term))
+        return self.index.get(extended_term)
 
 
 if __name__ == "__main__":
