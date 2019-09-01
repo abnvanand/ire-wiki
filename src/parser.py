@@ -2,19 +2,19 @@ import logging as log
 import xml.sax
 
 from src.helpers import Helpers
-from src.indexer import Indexer
+from src.indexer import SPIMI
 from src.tokenizer import Tokenizer
 
 
 class WikipediaHandler(xml.sax.ContentHandler):
     def __init__(self):
+        super().__init__()
         self.tokenizer = None
         self.tag = None
         # title and text and id(documentID) are available as field
+        self.id = ""
         self.title = ""
         self.text = []
-        self.id = ""
-
         # need extra processing for following fields:-
         # infobox , categories , external , references
 
@@ -23,22 +23,21 @@ class WikipediaHandler(xml.sax.ContentHandler):
         # make sure we DONOT use that as the id
         self.insideRevision = False
 
+        self.tokenstream = None
+
     def startElement(self, tag, attributes):
         """
         Signals the start of an element in non-namespace mode.
         """
         self.tag = tag  # for identification in characters() method
         if tag == "title":
-            log.debug("%s start", tag)
             self.title = ""  # reset for new title
         elif tag == "text":
-            log.debug("%s start", tag)
             self.text = ""  # reset for new text
         elif tag == "revision":
-            log.debug("%s start", tag)
             self.insideRevision = True
         elif tag == "id":
-            log.debug("%s start", tag)
+            pass
 
     def endElement(self, tag):
         """
@@ -51,14 +50,19 @@ class WikipediaHandler(xml.sax.ContentHandler):
 
         elif tag == "text":
             # By now the document title and id fields must have been extracted
-            Helpers.docid_docname_map[self.tokenizer.get_doc_id()] = self.tokenizer.get_title()
-            # add text body to that document    # TODO: use append
-            termid_freq_map = self.tokenizer.tokenize(self.text)
+            docid = self.tokenizer.get_doc_id()
 
-            # print("term_termid_map", Helpers.term_termid_map)
-            for term in termid_freq_map:
-                # accumulate (termid: docid) pairs
-                Indexer.termid_docid_list.append((term, self.tokenizer.get_doc_id()))
+            Helpers.docid_docname_map[docid] = self.tokenizer.get_title()
+
+            terms = self.tokenizer.tokenize(self.text)
+
+            # Control reaches here one for every page. (Precisely when the page ends)
+            # So this is a good place to build a term docid mapping
+            # Build a (term, docid) pair
+            # and call indexer to build index of terms
+            self.tokenstream = [(term, docid) for term in terms]
+            # NOTE: indexer might delay indexing of terms if the memory block is not full
+            SPIMI.spimi_invert(self.tokenstream)
 
         elif tag == "id" and not self.insideRevision:
             # DoNOT set id if inside <revision> <id>XXX</id>
@@ -85,9 +89,22 @@ class WikipediaHandler(xml.sax.ContentHandler):
         elif self.tag == "id" and not self.insideRevision:
             self.id = content
 
+    def endDocument(self):
+        """Receive notification of the end of a document."""
+        # create index over data
+        # call for writing last block to disk
+        log.debug("endDocument")
+
+        # write the last block if it is not empty
+        if self.tokenstream:
+            SPIMI.spimi_invert(self.tokenstream, is_last_block=True)  # True forces indexer to flush block to disk
+
+        # TODO: call for merging all blocks
+        SPIMI.merge_blocks()
+
 
 class XMLParser:
-    def parse(self, path):
+    def parse(self, DUMP_PATH, INDEX_DIR):
         # Create a XMLReader
         parser = xml.sax.make_parser()
 
@@ -98,4 +115,4 @@ class XMLParser:
         handler = WikipediaHandler()
         parser.setContentHandler(handler)
 
-        parser.parse(path)
+        parser.parse(DUMP_PATH)

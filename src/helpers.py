@@ -1,8 +1,6 @@
 class Helpers:
     stopwords = set()
     docid_docname_map = {}
-    term_termid_map = {}
-    termid_term_map = {}
 
     @staticmethod
     def load_stopwords(path):

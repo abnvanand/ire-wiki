@@ -1,5 +1,4 @@
 import re
-from collections import defaultdict
 
 from src import constants
 from src.helpers import Helpers
@@ -11,13 +10,12 @@ references_pattern = "(?s){{[Cc]ite(.*?)}}"
 
 
 class Tokenizer:
-
     def __init__(self, title):
         self.title = title
         self.doc_id = -1
         self.body_text = []
 
-        self.termid_freq_map = defaultdict(int)
+        self.terms_with_field = []
 
     def set_title(self, title):
         self.title = title
@@ -43,9 +41,9 @@ class Tokenizer:
         self.extract_body(body_text)
         self.extract_infobox(body_text)
         self.extract_categories(body_text)
-        self.extract_links(body_text)
+        # self.extract_links(body_text)
         self.extract_references(body_text)
-        return self.termid_freq_map
+        return self.terms_with_field
 
     def extract_token(self, content, field_type):
         # FIXME: will replace accented chars with spaces
@@ -60,14 +58,8 @@ class Tokenizer:
         # stemming
         stemmer = PorterStemmer()
         terms = [stemmer.stem(word, 0, len(word) - 1) for word in tokens]
-        # Add term to global dict
-        # add no of occurrences in current doc in a map
-        for term in terms:
-            term_with_field = f"{term}{constants.FIELD_SEP}{field_type}"
-            Helpers.addto_term_termid_map(term_with_field)
-            termid = Helpers.get_termid(term_with_field)
-            self.termid_freq_map[termid] += 1
-            # self.termid_freq_map[term_with_field] += 1
+        # create a extended terms list
+        self.terms_with_field += [f"{term}{constants.FIELD_SEP}{field_type}" for term in terms]
 
     def extract_body(self, body_text):
         body_text = re.sub("<ref>.*?</ref>", "", body_text)
