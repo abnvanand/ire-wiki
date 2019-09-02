@@ -52,7 +52,7 @@ class SPIMI:
         pass
 
     @staticmethod
-    def spimi_invert(tokenstream, is_last_block=False):
+    def spimi_invert(tokenstream=None, is_last_block=False):
         # fill the block
         for term, docid in tokenstream:
             SPIMI.block[term].append(docid)
@@ -135,7 +135,7 @@ class SPIMI:
                 remaining_lines[block_idx] += 1
 
         heapq.heapify(minheap)  # Convert list to minheap
-        log.debug("minheap currently after init: %s", minheap)
+        log.debug("minheap currently after init length = %s", len(minheap))
 
         write_buffer = OrderedDict()
 

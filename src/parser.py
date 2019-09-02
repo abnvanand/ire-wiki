@@ -63,7 +63,9 @@ class WikipediaHandler(xml.sax.ContentHandler):
             # and call indexer to build index of terms
             self.tokenstream = [(term, docid) for term in terms]
             # NOTE: indexer might delay indexing of terms if the memory block is not full
-            SPIMI.spimi_invert(self.tokenstream)
+            SPIMI.spimi_invert(tokenstream=self.tokenstream, is_last_block=False)
+
+            self.tokenstream.clear()  # clear for next iter
 
         elif tag == "id" and not self.insideRevision:
             # DoNOT set id if inside <revision> <id>XXX</id>
@@ -96,9 +98,8 @@ class WikipediaHandler(xml.sax.ContentHandler):
         # call for writing last block to disk
         log.debug("endDocument")
 
-        # write the last block if it is not empty
-        if self.tokenstream:
-            SPIMI.spimi_invert(self.tokenstream, is_last_block=True)  # True forces indexer to flush block to disk
+        # force flush last block to disk
+        SPIMI.spimi_invert(tokenstream=[], is_last_block=True)  # True forces indexer to flush block to disk
 
         # TODO: call for merging all blocks
         SPIMI.merge_blocks()
