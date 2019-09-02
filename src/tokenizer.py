@@ -1,4 +1,5 @@
 import re
+from collections import defaultdict
 
 from src import constants
 from src.helpers import Helpers
@@ -7,6 +8,7 @@ from src.stemmer import PorterStemmer
 infobox_pattern = "{{infobox"
 category_pattern = "\\[\\[category:(.*?)\\]\\]"
 references_pattern = "(?s){{[Cc]ite(.*?)}}"
+stemmer = PorterStemmer()
 
 
 class Tokenizer:
@@ -15,7 +17,7 @@ class Tokenizer:
         self.doc_id = -1
         self.body_text = []
 
-        self.terms_with_field = []
+        self.term_freq_map = defaultdict(int)
 
     def set_title(self, title):
         self.title = title
@@ -30,20 +32,16 @@ class Tokenizer:
         return self.title
 
     def tokenize(self, body_text):
-        # tokenize title
         self.extract_token(self.title.lower(), 'T')
 
-        # tokenize body text
-        # body_text = " ".join(body_text)  # TODO uncomment when receiving body text as list
-        body_text = body_text.lower()
+        body_text = body_text.lower()  # case folding
 
-        # todo:
         self.extract_body(body_text)
         self.extract_infobox(body_text)
         self.extract_categories(body_text)
         # self.extract_links(body_text)
         self.extract_references(body_text)
-        return self.terms_with_field
+        return self.term_freq_map
 
     def extract_token(self, content, field_type):
         # FIXME: will replace accented chars with spaces
@@ -51,15 +49,39 @@ class Tokenizer:
         # split to tokens
         tokens = re.split("[ ]", text)
 
-        # stopwords removal
-        # tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
-        tokens = set(tokens) - Helpers.get_stopwords()
+        for token in tokens:
+            # stopwords removal
+            if token in Helpers.get_stopwords() or token.isspace():
+                continue
 
-        # stemming
-        stemmer = PorterStemmer()
-        terms = [stemmer.stem(word, 0, len(word) - 1) for word in tokens]
-        # create a extended terms list
-        self.terms_with_field += [f"{term}{constants.FIELD_SEP}{field_type}" for term in terms]
+            # stemming
+            token = stemmer.stem(token, 0, len(token) - 1)
+
+            # create an extended term  (extended term == term + field_type)
+            token = f"{token}{constants.FIELD_SEP}{field_type}"
+
+            # TODO: Normalize tf with ||D||
+            self.term_freq_map[token] += 1  # TODO: use collections.Counter
+
+    # def extract_token(self, content, field_type):
+    #     # FIXME: will replace accented chars with spaces
+    #     text = re.sub(r'[^a-z0-9 ]', ' ', content)  # replaces all non-alphanumeric chars by spaces
+    #     # split to tokens
+    #     tokens = re.split("[ ]", text)
+    #
+    #     # stopwords removal
+    #     # tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
+    #     tokens = set(tokens) - Helpers.get_stopwords()
+    #
+    #     # TODO: Optimize comprehensions with generators if possible
+    #     # stemming
+    #     stemmer = PorterStemmer()
+    #     terms = [stemmer.stem(word, 0, len(word) - 1) for word in tokens]
+    #     # create a extended terms list  (extended term == term + field_type)
+    #     terms = [f"{term}{constants.FIELD_SEP}{field_type}" for term in terms]
+    #
+    #     for extended_term in terms:
+    #         self.term_freq_map[extended_term] += 1
 
     def extract_body(self, body_text):
         body_text = re.sub("<ref>.*?</ref>", "", body_text)

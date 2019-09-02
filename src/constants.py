@@ -10,6 +10,7 @@ TERM_POSTINGS_SEP = ":"
 DOCIDS_SEP = ","
 POS_SEP = ""
 FIELD_SEP = ""
+DOCID_TF_SEP = "|"
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"

@@ -4,7 +4,7 @@ import sys
 import time
 from collections import defaultdict, OrderedDict
 
-from src import constants
+from src.constants import TERM_POSTINGS_SEP, POSTINGS_FILE_NAME, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_SEP
 
 # INDEX_BLOCK_MAX_SIZE = 10 ** 9  # 10^9 => 1000 x 10^6 Bytes = 1000MB = 1GB
 INDEX_BLOCK_MAX_SIZE = 10 ** 7  # 10^7 => 10 x 10^6 Bytes = 10MB
@@ -34,11 +34,11 @@ class Indexer:
     @staticmethod
     def write_index_to_disk(INDEX_DIR):
         # Write index file
-        with open(f"{INDEX_DIR}/{constants.POSTINGS_FILE_NAME}",
+        with open(f"{INDEX_DIR}/{POSTINGS_FILE_NAME}",
                   "w") as fp:  # format=> termid:docid1,docid2,docid3....\n
             for termid in Indexer.postings_list:
                 print(
-                    f"{termid}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(Indexer.postings_list[termid])}",
+                    f"{termid}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(Indexer.postings_list[termid])}",
                     file=fp)
 
 
@@ -46,7 +46,7 @@ class SPIMI:
     n_blocks = 0
     max_block_size = INDEX_BLOCK_MAX_SIZE
     block = defaultdict(list)
-    INDEX_DIR = constants.DEFAULT_INDEX_DIR  # FIXME
+    INDEX_DIR = DEFAULT_INDEX_DIR  # FIXME
 
     def __init__(self, block_size_limit=None):
         pass
@@ -54,13 +54,11 @@ class SPIMI:
     @staticmethod
     def spimi_invert(tokenstream=None, is_last_block=False):
         # fill the block
-        for term, docid in tokenstream:
-            SPIMI.block[term].append(docid)
+        for term, term_freq, docid in tokenstream:
+            SPIMI.block[term].append(f"{docid}{DOCID_TF_SEP}{term_freq}")
 
-        # sys.getsizeof() is not working as expected
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:
-            # TODO: flush to disk
             log.debug("sys.getsizeof(SPIMI.dictionary): %s", sys.getsizeof(SPIMI.block))
             sorted_block = SPIMI.sort_terms(SPIMI.block)
             SPIMI.write_block_to_disk(sorted_block)
@@ -95,14 +93,14 @@ class SPIMI:
 
             with open(f"{SPIMI.INDEX_DIR}/block{SPIMI.n_blocks}", "w") as block_fp:
                 for term, doclist in sorted_block:
-                    block_fp.write(f"{term}:{','.join(doclist)}\n")
+                    block_fp.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
         else:  # it's a dictionary
             log.debug("Write sorted_block dict")
             with open(f"{SPIMI.INDEX_DIR}/block{SPIMI.n_blocks}", "w") as block_fp:
                 for term in sorted_block:
                     doclist = sorted_block[term]
-                    block_fp.write(f"{term}:{','.join(doclist)}\n")
+                    block_fp.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
         log.debug("Block written to disk in %s seconds", time.process_time() - start_time)
 
@@ -116,7 +114,7 @@ class SPIMI:
         WRITE_BUFFER_SIZE = 100000
 
         # writer
-        write_fp = open(f"{SPIMI.INDEX_DIR}/{constants.POSTINGS_FILE_NAME}", "w")
+        write_fp = open(f"{SPIMI.INDEX_DIR}/{POSTINGS_FILE_NAME}", "w")
 
         # readers
         block_fps = [open(f"{SPIMI.INDEX_DIR}/block{i}", "r") for i in range(1, SPIMI.n_blocks + 1)]
@@ -151,7 +149,7 @@ class SPIMI:
                 for term in write_buffer:
                     # Flush to index file
                     write_fp.write(
-                        f"{term}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(write_buffer[term])}\n")
+                        f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
                 write_buffer.clear()
 
             remaining_lines[block_idx] -= 1
@@ -174,7 +172,7 @@ class SPIMI:
             for term in write_buffer:
                 # Flush to index file
                 write_fp.write(
-                    f"{term}{constants.TERM_POSTINGS_SEP}{constants.DOCIDS_SEP.join(write_buffer[term])}\n")
+                    f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
 
         # Close files
         write_fp.close()
