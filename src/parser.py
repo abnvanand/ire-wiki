@@ -1,8 +1,6 @@
 import logging as log
 import xml.sax
 
-from sympy.codegen.fnodes import isign
-
 from src.helpers import Helpers
 from src.indexer import SPIMI
 from src.tokenizer import Tokenizer
@@ -57,15 +55,17 @@ class WikipediaHandler(xml.sax.ContentHandler):
 
             Helpers.docid_docname_map[docid] = self.tokenizer.get_title()
 
-            term_freq_map = self.tokenizer.tokenize(''.join(self.text))
+            # Tokenize the terms of current page(document)
+            self.tokenstream, n_terms = self.tokenizer.tokenize(''.join(self.text))
 
             # Control reaches here once for every page. (Precisely when the page ends)
             # So this is a good place to build a term docid mapping
             # Build a (term, freq, docid) tuple
             # and call indexer to build index of terms
-            self.tokenstream = [(term, term_freq_map[term], docid) for term in term_freq_map]
+            # self.tokenstream = [(term, term_map[term][FREQUENCY] / n_terms, docid) for term in term_map]
+
             # NOTE: indexer might delay indexing of terms if the memory block is not full
-            SPIMI.spimi_invert(tokenstream=self.tokenstream, is_last_block=False)
+            SPIMI.spimi_invert(tokenstream=self.tokenstream, n_terms=n_terms, docid=docid, is_last_block=False)
 
             self.tokenstream.clear()  # clear for next iter
 

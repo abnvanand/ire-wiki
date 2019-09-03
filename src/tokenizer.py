@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
 
-from src import constants
+from src.constants import FREQUENCY, ZONES
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
@@ -17,7 +17,10 @@ class Tokenizer:
         self.doc_id = -1
         self.body_text = []
 
-        self.term_freq_map = defaultdict(int)
+        # {token1: {freq:count, zones:set("TBIRC")}}
+        self.term_map = defaultdict(lambda: {FREQUENCY: 0, ZONES: set()})
+
+        self.n_terms = 0  # Total no. of terms in `this` doc. needed for normalizing tf
 
     def set_title(self, title):
         self.title = title
@@ -41,7 +44,7 @@ class Tokenizer:
         self.extract_categories(body_text)
         # self.extract_links(body_text)
         self.extract_references(body_text)
-        return self.term_freq_map
+        return self.term_map, self.n_terms
 
     def extract_token(self, content, field_type):
         # FIXME: will replace accented chars with spaces
@@ -51,17 +54,15 @@ class Tokenizer:
 
         for token in tokens:
             # stopwords removal
-            if token in Helpers.get_stopwords() or token.isspace():
+            if (token in Helpers.get_stopwords()) or (token.isspace()) or (not token):
                 continue
 
             # stemming
             token = stemmer.stem(token, 0, len(token) - 1)
 
-            # create an extended term  (extended term == term + field_type)
-            token = f"{token}{constants.FIELD_SEP}{field_type}"
-
-            # TODO: Normalize tf with ||D||
-            self.term_freq_map[token] += 1  # TODO: use collections.Counter
+            self.term_map[token][FREQUENCY] += 1  # TODO: use collections.Counter if possible
+            self.term_map[token][ZONES] |= set(field_type)
+            self.n_terms += 1  # counts repeated terms as well
 
     # def extract_token(self, content, field_type):
     #     # FIXME: will replace accented chars with spaces
@@ -87,9 +88,9 @@ class Tokenizer:
         body_text = re.sub("<ref>.*?</ref>", "", body_text)
         body_text = re.sub("</?.*?>", "", body_text)
         body_text = re.sub("{{.*?\\}\\}", "", body_text)
-        body_text = re.sub("\\[\\[.*?:.*?\\]\\]", "", body_text)
-        body_text = re.sub("\\[\\[(.*?)\\]\\]", "", body_text)
-        body_text = re.sub("\\s(.*?)\\|(\\w+\\s)", " $2", body_text)
+        body_text = re.sub("\\[\\[.*?:.*?\\]\\]", "", body_text)  # FIXME: both look same
+        body_text = re.sub("\\[\\[(.*?)\\]\\]", "", body_text)  # FIXME: both look same
+        body_text = re.sub("\\s(.*?)\\|(\\w+\\s)", " $2", body_text)  # FIXME: capturing group is unnecessary
         body_text = re.sub("\\[.*?\\]", " ", body_text)
         body_text = re.sub("(?s)<!--.*?-->", "", body_text)  # Remove all NOTE tags
         body_text = re.sub(references_pattern, "", body_text)  # remove Citations

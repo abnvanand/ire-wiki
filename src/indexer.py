@@ -4,7 +4,9 @@ import sys
 import time
 from collections import defaultdict, OrderedDict
 
-from src.constants import TERM_POSTINGS_SEP, POSTINGS_FILE_NAME, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_SEP
+from src.constants import TERM_POSTINGS_SEP, POSTINGS_FILE_NAME, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
+    ZONES, \
+    FREQUENCY
 
 # INDEX_BLOCK_MAX_SIZE = 10 ** 9  # 10^9 => 1000 x 10^6 Bytes = 1000MB = 1GB
 INDEX_BLOCK_MAX_SIZE = 10 ** 7  # 10^7 => 10 x 10^6 Bytes = 10MB
@@ -52,10 +54,13 @@ class SPIMI:
         pass
 
     @staticmethod
-    def spimi_invert(tokenstream=None, is_last_block=False):
+    def spimi_invert(tokenstream=None, n_terms=1, docid=0, is_last_block=False):
         # fill the block
-        for term, term_freq, docid in tokenstream:
-            SPIMI.block[term].append(f"{docid}{DOCID_TF_SEP}{term_freq}")
+        for term in tokenstream:  # tokenstream is a dict with unique terms
+            # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
+            # TODO: normalize tf using n_terms
+            SPIMI.block[term].append(
+                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
 
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:

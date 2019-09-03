@@ -10,9 +10,12 @@ TERM_POSTINGS_SEP = ":"
 DOCIDS_SEP = ","
 POS_SEP = ""
 FIELD_SEP = ""
-DOCID_TF_SEP = "|"
+DOCID_TF_ZONES_SEP = "|"
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"
 
 FIELD_QUERY_OPERATOR = "OR"
+
+FREQUENCY = "freq"
+ZONES = "zones"
