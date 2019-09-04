@@ -53,10 +53,10 @@ class WikipediaHandler(xml.sax.ContentHandler):
             # By now the document title and id fields must have been extracted
             docid = self.tokenizer.get_doc_id()
 
-            Helpers.docid_docname_map[docid] = self.tokenizer.get_title()
-
             # Tokenize the terms of current page(document)
             self.tokenstream, n_terms = self.tokenizer.tokenize(''.join(self.text))
+
+            Helpers.docid_docname_map[docid] = (self.tokenizer.get_title(), n_terms)
 
             # Control reaches here once for every page. (Precisely when the page ends)
             # So this is a good place to build a term docid mapping

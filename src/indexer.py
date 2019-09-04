@@ -25,9 +25,8 @@ class SPIMI:
         # fill the block
         for term in tokenstream:  # tokenstream is a dict with unique terms
             # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
-            # TODO: play with normalized tf precision. tradeoff between index size vs result rank
             SPIMI.block[term].append(
-                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY] / n_terms:.4f}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
+                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
 
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:
