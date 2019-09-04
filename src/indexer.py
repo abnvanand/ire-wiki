@@ -8,40 +8,7 @@ from src.constants import TERM_POSTINGS_SEP, POSTINGS_FILE_NAME, DOCIDS_SEP, DEF
     ZONES, \
     FREQUENCY
 
-# INDEX_BLOCK_MAX_SIZE = 10 ** 9  # 10^9 => 1000 x 10^6 Bytes = 1000MB = 1GB
-INDEX_BLOCK_MAX_SIZE = 10 ** 7  # 10^7 => 10 x 10^6 Bytes = 10MB
-
-
-class Indexer:
-    # termid_docid_list = []
-    # postings_list = defaultdict(list)
-
-    @staticmethod
-    def bsbi():
-        pass
-
-    @staticmethod
-    def spimi():
-        pass
-
-    # @staticmethod
-    # def basic_index():
-    #     # TODO: verify whether python GC bug still exists: https://stackoverflow.com/a/2480015/5463404
-    #     log.debug("termid_docid_list length: %s", len(Indexer.termid_docid_list))
-    #     Indexer.termid_docid_list.sort()
-    #     Indexer.postings_list.clear()
-    #     for termid, docid in Indexer.termid_docid_list:
-    #         Indexer.postings_list[termid].append(docid)
-
-    @staticmethod
-    def write_index_to_disk(INDEX_DIR):
-        # Write index file
-        with open(f"{INDEX_DIR}/{POSTINGS_FILE_NAME}",
-                  "w") as fp:  # format=> termid:docid1,docid2,docid3....\n
-            for termid in Indexer.postings_list:
-                print(
-                    f"{termid}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(Indexer.postings_list[termid])}",
-                    file=fp)
+INDEX_BLOCK_MAX_SIZE = (10 ** 7)  # 10**7 Bytes = 10MB
 
 
 class SPIMI:
@@ -60,7 +27,7 @@ class SPIMI:
             # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
             # TODO: play with normalized tf precision. tradeoff between index size vs result rank
             SPIMI.block[term].append(
-                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]/n_terms:.4f}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
+                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY] / n_terms:.4f}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
 
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:

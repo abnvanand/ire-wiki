@@ -64,26 +64,6 @@ class Tokenizer:
             self.term_map[token][ZONES] |= set(field_type)
             self.n_terms += 1  # counts repeated terms as well
 
-    # def extract_token(self, content, field_type):
-    #     # FIXME: will replace accented chars with spaces
-    #     text = re.sub(r'[^a-z0-9 ]', ' ', content)  # replaces all non-alphanumeric chars by spaces
-    #     # split to tokens
-    #     tokens = re.split("[ ]", text)
-    #
-    #     # stopwords removal
-    #     # tokens = [term for term in tokens if term not in Helpers.get_stopwords() and not term.isspace()]
-    #     tokens = set(tokens) - Helpers.get_stopwords()
-    #
-    #     # TODO: Optimize comprehensions with generators if possible
-    #     # stemming
-    #     stemmer = PorterStemmer()
-    #     terms = [stemmer.stem(word, 0, len(word) - 1) for word in tokens]
-    #     # create a extended terms list  (extended term == term + field_type)
-    #     terms = [f"{term}{constants.FIELD_SEP}{field_type}" for term in terms]
-    #
-    #     for extended_term in terms:
-    #         self.term_freq_map[extended_term] += 1
-
     def extract_body(self, body_text):
         body_text = re.sub("<ref>.*?</ref>", "", body_text)
         body_text = re.sub("</?.*?>", "", body_text)
@@ -166,8 +146,4 @@ class Tokenizer:
         links = re.findall("((?:http[s]?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|])", text,
                            flags=re.MULTILINE)
 
-        # regex to remove junk
-        # junks_pattern = re.compile(r"[~`!#@$-%^*+{\[}\]\|\\<>/?]", re.DOTALL)
-        # links = ' '.join(links)
-        # links = junks_pattern.sub(' ', links)
         self.extract_token(" ".join(links), "L")
