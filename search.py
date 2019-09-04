@@ -1,8 +1,9 @@
 import logging as log
 import re
+from collections import defaultdict
 
 from src import constants
-from src.constants import STOPWORDS_FILE_PATH, FIELD_QUERY_OPERATOR
+from src.constants import STOPWORDS_FILE_PATH
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
@@ -25,20 +26,25 @@ field_type_map = {
 
 class Search:
     def __init__(self):
-        self.index = {}
+        self.index = defaultdict(list)
         self.docid_title_map = {}
+        self.n_docs = 0
 
     def load_docid_title(self, path):
         with open(f"{path}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", 'r') as fp:
             self.docid_title_map = eval(fp.read())
+        self.n_docs = len(self.docid_title_map)
 
     def load_index(self, path):
         with open(f"{path}/{constants.POSTINGS_FILE_NAME}") as fp:
             for line in fp:
                 line = line.strip()
                 term, postings = line.split(constants.TERM_POSTINGS_SEP)
-                postings = [int(x) for x in postings.split(constants.DOCIDS_SEP)]
-                self.index[term] = postings
+                for unit in postings.split(constants.DOCIDS_SEP):
+                    docid, freq, zones = unit.split(constants.DOCID_TF_ZONES_SEP)
+                    #
+                    # self.index[term].append({docid: {constants.FREQUENCY: freq, constants.ZONES: set(zones)}})
+                    self.index[term].append((docid, freq, set(zones)))
 
     def get_terms(self, line):
         line = line.lower()
@@ -60,18 +66,20 @@ class Search:
 
         # Loop over each query
         for query in queryfp:
-            results = []
+            docids = []
             query_type = self.get_query_type(query)
             if query_type == ONE_WORD_QUERY:
-                results = self.one_word_query(query)
+                docids = self.one_word_query(query)
             elif query_type == FREE_TEXT_QUERY:
-                results = self.free_text_query(query)
+                docids = self.free_text_query(query)
             elif query_type == FIELD_QUERY:
-                results = self.field_query(query)
+                docids = self.field_query(query)
 
-            results = list(results)
+            docids = list(docids)
+            # TODO: rank results
+
             log.info("Results for query: %s", query.rstrip())
-            for result in results[:10]:  # print only 10 results
+            for result in self.get_doc_names_from_ids(docids):  # print only 10 results
                 log.info(result)
                 print(result, file=outputfp)
             print(file=outputfp)
@@ -87,31 +95,33 @@ class Search:
         elif len(terms) > 1:
             return self.free_text_query(query)
 
-        # else terms contains 1 term
+        # else terms contains only 1 term
         term = terms[0]
-        docids = set()
-        # import ipdb
-        # ipdb.set_trace()
 
-        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}T") or [])  # Search in title text
-        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}B") or [])  # Search in title text
-        docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}I") or [])  # Search in title text
-        # TODO: add search in other fields
+        results = []
 
-        return self.get_doc_names_from_ids(docids)
+        for docid, tf, zones in self.index[term]:
+            tf_idf_score = float(tf) * self.get_idf(term)
+            results.append((tf_idf_score, docid))
+
+        docids = [docid for tfidf, docid in sorted(results, reverse=True)[:10]]
+        return docids
 
     def free_text_query(self, query):
         terms = self.get_terms(query)
-        docids = set()
+        results = set()
         for term in terms:
             if not term.isspace():
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}T") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}B") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}I") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}C") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}R") or [])  # Search in title text
-                docids |= set(self.get_postings(f"{term}{constants.FIELD_SEP}L") or [])  # Search in title text
-        return self.get_doc_names_from_ids(docids)
+                for docid, tf, zones in self.index[term]:
+                    tf_idf_score = float(tf) * self.get_idf(term)
+                    results.add((tf_idf_score, docid))
+
+        results = sorted(results, reverse=True)
+        docids = [docid for tfidf, docid in results[:10]]
+
+        # TODO: rank results using cosine similarity and weighted zones not just tfidf scores
+
+        return docids
 
     def field_query(self, field_query):
         # TODO: decide OR vs AND
@@ -119,36 +129,17 @@ class Search:
         docids = set()
         field_terms = field_query.split()  # will now contain ['t:Sachin', 'b:Tendulkar', ...]
 
-        if FIELD_QUERY_OPERATOR == "OR":
-            for extended_term in field_terms:
-                ft, query = extended_term.split(":")
-                terms = self.get_terms(query)
-                for term in terms:
-                    if not term.isspace():
-                        docids |= set(
-                            self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or [])
-
-        else:  # use AND instead of OR
-            # Logic: fill docids of first field type,
-            # then perform intersection with subsequent field types
-            ft, query = field_terms[0].split(":")
+        for extended_term in field_terms:
+            ft, query = extended_term.split(":")  # ft=t, query=Sachin
             terms = self.get_terms(query)
             for term in terms:
-                if not term.isspace():
-                    # Perform OR
-                    docids |= set(
-                        self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or [])
+                if term and not term.isspace():
+                    for docid, tf, zones in self.index[term]:
+                        if field_type_map[ft] in zones:
+                            docids.add(docid)
 
-            for extended_term in field_terms[1:]:
-                ft, query = extended_term.split(":")
-                terms = self.get_terms(query)
-                for term in terms:
-                    if not term.isspace():
-                        # Perform AND (intersection)
-                        docids.intersection_update(set(
-                            self.get_postings(f"{term}{constants.FIELD_SEP}{field_type_map[ft].upper()}") or []))
-
-        return self.get_doc_names_from_ids(docids)
+        # TODO: rank results using cosine similarity and weighted zones
+        return list(docids)[:10]
 
     @staticmethod
     def get_query_type(query):
@@ -165,8 +156,11 @@ class Search:
             docnames.add(self.docid_title_map.get(str(docid)))
         return docnames
 
-    def get_postings(self, extended_term):
-        return self.index.get(extended_term)
+    def get_idf(self, term):
+        N = self.n_docs
+        Nt = len(self.index[term])
+        from math import log10
+        return log10(N / Nt)
 
 
 if __name__ == "__main__":
@@ -178,3 +172,4 @@ if __name__ == "__main__":
     outputfile = sys.argv[3] if len(sys.argv) > 3 else constants.OUTPUT_FILE
 
     srchobj.search_index(path, queryfile, outputfile)
+    log.info(srchobj.n_docs)
