@@ -8,7 +8,7 @@ from collections import defaultdict, OrderedDict
 from src.constants import TERM_POSTINGS_SEP, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
     ZONES, FREQUENCY, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE
 
-INDEX_BLOCK_MAX_SIZE = (10 ** 7)  # 10**7 Bytes = 10MB  # TODO: adjust
+INDEX_BLOCK_MAX_SIZE = (10 ** 9)  # 10**9 Bytes = 1GB  # TODO: adjust
 
 
 class SPIMI:
@@ -78,8 +78,10 @@ class SPIMI:
         log.info("Merging %s blocks", SPIMI.n_temp_blocks)
 
         # buffers that will contain first `few` records of each block file
-        READ_BUF_LEN = 10000
-        WRITE_BUF_LEN = 100000
+        TOTAL_READ_DATA = 5 * (10 ** 8)  # 5 * 100 *10^6 = 500 MB
+        READ_BUF_LEN = 100000 // SPIMI.n_temp_blocks
+        # READ_BUF_SIZE = TOTAL_READ_DATA / SPIMI.n_temp_blocks
+        WRITE_BUF_SIZE = 10 ** 8  # 100 *10^6 = 100 MB
 
         secondary_index = []
 
@@ -120,7 +122,8 @@ class SPIMI:
 
             write_buffer[term] = write_buffer.get(term, []) + docids
 
-            if len(write_buffer) >= WRITE_BUF_LEN:
+            # if len(write_buffer) >= WRITE_BUF_SIZE:   # Old way
+            if sys.getsizeof(write_buffer) > WRITE_BUF_SIZE:
                 SPIMI.write_primary_block_to_disk(write_buffer)
                 write_buffer.clear()
 
