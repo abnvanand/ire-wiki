@@ -103,7 +103,7 @@ class WikipediaHandler(xml.sax.ContentHandler):
         # force flush last block to disk
         SPIMI.spimi_invert(tokenstream=[], is_last_block=True)  # True forces indexer to flush block to disk
 
-        # TODO: call for merging all blocks
+        # call for merging all blocks
         SPIMI.merge_blocks()
 
 
