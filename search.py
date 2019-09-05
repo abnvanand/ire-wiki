@@ -1,9 +1,10 @@
 import logging as log
+import os
 import re
+from bisect import bisect
 from collections import defaultdict
 
-from src import constants
-from src.constants import STOPWORDS_FILE_PATH
+from src.constants import *
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
@@ -25,26 +26,51 @@ field_type_map = {
 
 
 class Search:
-    def __init__(self):
-        self.index = defaultdict(list)
-        self.docid_title_map = {}
-        self.n_docs = 0
+    def __init__(self, indexdir, query_file, output_file):
+        self.index_dir = indexdir
+        self.QUERY_FILE = query_file
+        self.OUTPUT_FILE = output_file
 
-    def load_docid_title(self, path):
-        with open(f"{path}/{constants.DOC_ID_TITLE_MAPPING_FILE_NAME}", 'r') as fp:
+        self.docid_title_map = {}
+        self.secondary_index = []
+
+        self.index = defaultdict(list)
+
+        self.n_docs = 0
+        self.nameofBlockCurrentlyInMemory = ""
+
+    def load_docid_title(self):
+        # {docid: (doctitle, n_terms)}
+        with open(os.path.join(self.index_dir, DOC_ID_TITLE_MAPPING_FILE_NAME), 'r') as fp:
             self.docid_title_map = eval(fp.read())
         self.n_docs = len(self.docid_title_map)
 
-    def load_index(self, path):
-        with open(f"{path}/{constants.POSTINGS_FILE_NAME}") as fp:
+    def load_secondary_index(self):
+        with open(os.path.join(self.index_dir, SECONDARY_INDEX_FILE), 'r') as fp:
+            self.secondary_index = eval(fp.read())
+
+    def load_primary(self, block_to_load):
+
+        # TODO: Do not load if already loaded
+        if self.nameofBlockCurrentlyInMemory == block_to_load:
+            log.debug("Block %s already in memory", block_to_load)
+            return
+
+        log.debug("Block %s not in memory. Loading!!!", block_to_load)
+        self.index.clear()
+        with open(os.path.join(self.index_dir, block_to_load), 'r') as fp:
             for line in fp:
                 line = line.strip()
-                term, postings = line.split(constants.TERM_POSTINGS_SEP)
-                for unit in postings.split(constants.DOCIDS_SEP):
-                    docid, freq, zones = unit.split(constants.DOCID_TF_ZONES_SEP)
-                    #
-                    # self.index[term].append({docid: {constants.FREQUENCY: freq, constants.ZONES: set(zones)}})
+                term, postings = line.split(TERM_POSTINGS_SEP)
+                for unit in postings.split(DOCIDS_SEP):
+                    docid, freq, zones = unit.split(DOCID_TF_ZONES_SEP)
                     self.index[term].append((docid, freq, set(zones)))
+            self.nameofBlockCurrentlyInMemory = block_to_load
+
+    def get_index(self, term):
+        primary_blk_suffix = bisect(self.secondary_index, (term, "z"))  # FIXME: added "z" to match higher than primaryX
+        self.load_primary(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
+        return self.index[term]
 
     def get_terms(self, line):
         line = line.lower()
@@ -55,14 +81,14 @@ class Search:
         line = [stemmer.stem(word, 0, len(word) - 1) for word in line]
         return line
 
-    def search_index(self, path, queryfile, outputfile):
+    def search_index(self):
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
-        self.load_index(path)
-        self.load_docid_title(path)
+        self.load_secondary_index()
+        self.load_docid_title()
 
-        log.debug("Index", self.index)
-        queryfp = open(queryfile, "r")
-        outputfp = open(outputfile, "w")
+        log.debug("Secondary index", self.secondary_index)
+        queryfp = open(self.QUERY_FILE, "r")
+        outputfp = open(self.OUTPUT_FILE, "w")
 
         # Loop over each query
         for query in queryfp:
@@ -100,9 +126,10 @@ class Search:
 
         results = []
 
-        for docid, tf, zones in self.index[term]:
+        for docid, tf, zones in self.get_index(term):
+            n_terms = self.docid_title_map[docid][1]
             tf_idf_score = float(tf) * self.get_idf(term)
-            results.append((tf_idf_score, docid))
+            results.append((tf_idf_score / n_terms, docid))
 
         docids = [docid for tfidf, docid in sorted(results, reverse=True)[:10]]
         return docids
@@ -112,15 +139,16 @@ class Search:
         results = set()
         for term in terms:
             if not term.isspace():
-                for docid, tf, zones in self.index[term]:
+                for docid, tf, zones in self.get_index(term):
+                    n_terms = self.docid_title_map[docid][1]
                     tf_idf_score = float(tf) * self.get_idf(term)
-                    results.add((tf_idf_score, docid))
+                    score = tf_idf_score * self.get_idf(term)  # tfidf_t_d x w_t_q
+                    results.add((score / n_terms, docid))
 
         results = sorted(results, reverse=True)
         docids = [docid for tfidf, docid in results[:10]]
 
-        # TODO: rank results using cosine similarity and weighted zones not just tfidf scores
-
+        # TODO: rank results using weighted zones not just tfidf scores
         return docids
 
     def field_query(self, field_query):
@@ -134,7 +162,7 @@ class Search:
             terms = self.get_terms(query)
             for term in terms:
                 if term and not term.isspace():
-                    for docid, tf, zones in self.index[term]:
+                    for docid, tf, zones in self.get_index(term):
                         if field_type_map[ft] in zones:
                             docids.add(docid)
 
@@ -158,18 +186,18 @@ class Search:
 
     def get_idf(self, term):
         N = self.n_docs
-        Nt = len(self.index[term])
+        Nt = len(self.get_index(term))
         from math import log10
         return log10(N / Nt)
 
 
 if __name__ == "__main__":
-    srchobj = Search()
     import sys
 
-    path = sys.argv[1] if len(sys.argv) > 1 else constants.DEFAULT_INDEX_DIR
-    queryfile = sys.argv[2] if len(sys.argv) > 2 else constants.QUERY_FILE
-    outputfile = sys.argv[3] if len(sys.argv) > 3 else constants.OUTPUT_FILE
+    index_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_INDEX_DIR
+    queryfile = sys.argv[2] if len(sys.argv) > 2 else QUERY_FILE
+    outputfile = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_FILE
 
-    srchobj.search_index(path, queryfile, outputfile)
+    srchobj = Search(index_dir, queryfile, outputfile)
+    srchobj.search_index()
     log.info(srchobj.n_docs)
