@@ -65,15 +65,15 @@ class Tokenizer:
             self.n_terms += 1  # counts repeated terms as well
 
     def extract_body(self, body_text):
-        body_text = re.sub("<ref>.*?</ref>", "", body_text)
-        body_text = re.sub("</?.*?>", "", body_text)
-        body_text = re.sub("{{.*?\\}\\}", "", body_text)
-        body_text = re.sub("\\[\\[.*?:.*?\\]\\]", "", body_text)  # FIXME: both look same
-        body_text = re.sub("\\[\\[(.*?)\\]\\]", "", body_text)  # FIXME: both look same
-        body_text = re.sub("\\s(.*?)\\|(\\w+\\s)", " $2", body_text)  # FIXME: capturing group is unnecessary
+        body_text = re.sub("<ref>.*?</ref>", " ", body_text)
+        body_text = re.sub("</?.*?>", " ", body_text)
+        body_text = re.sub("{{.*?\\}\\}", " ", body_text)
+        body_text = re.sub("\\[\\[.*?:.*?\\]\\]", " ", body_text)  # FIXME: both look same
+        body_text = re.sub("\\[\\[(.*?)\\]\\]", " ", body_text)  # FIXME: both look same
+        body_text = re.sub("\\s(.*?)\\|(\\w+\\s)", " ", body_text)  # FIXME: capturing group is unnecessary
         body_text = re.sub("\\[.*?\\]", " ", body_text)
-        body_text = re.sub("(?s)<!--.*?-->", "", body_text)  # Remove all NOTE tags
-        body_text = re.sub(references_pattern, "", body_text)  # remove Citations
+        body_text = re.sub("(?s)<!--.*?-->", " ", body_text)  # Remove all NOTE tags
+        body_text = re.sub(references_pattern, " ", body_text)  # remove Citations
         self.extract_token(body_text, "B")
 
     def extract_infobox(self, text):
