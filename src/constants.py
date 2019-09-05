@@ -1,6 +1,7 @@
 DEFAULT_DUMP_PATH = "dumps/sample26.xml"
 DEFAULT_INDEX_DIR = "indexes"
 POSTINGS_FILE_NAME = "postings.txt"
+SECONDARY_INDEX_FILE = "secondary.txt"
 TERM_ID_MAPPING_FILE_NAME = "term-termid-map.txt"
 DOC_ID_TITLE_MAPPING_FILE_NAME = "docid-title-map.txt"
 
@@ -19,3 +20,6 @@ FIELD_QUERY_OPERATOR = "OR"
 
 FREQUENCY = "freq"
 ZONES = "zones"
+
+TMP_BLK_PREFIX = "temp"
+PRIMARY_BLK_PREFIX = "primary"

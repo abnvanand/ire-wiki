@@ -1,21 +1,22 @@
 import heapq
 import logging as log
+import os
 import sys
 import time
 from collections import defaultdict, OrderedDict
 
-from src.constants import TERM_POSTINGS_SEP, POSTINGS_FILE_NAME, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
-    ZONES, \
-    FREQUENCY
+from src.constants import TERM_POSTINGS_SEP, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
+    ZONES, FREQUENCY, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE
 
 INDEX_BLOCK_MAX_SIZE = (10 ** 7)  # 10**7 Bytes = 10MB
 
 
 class SPIMI:
-    n_blocks = 0
+    n_temp_blocks = 0
     max_block_size = INDEX_BLOCK_MAX_SIZE
     block = defaultdict(list)
     INDEX_DIR = DEFAULT_INDEX_DIR  # FIXME
+    n_primary_blocks = 0
 
     def __init__(self, block_size_limit=None):
         pass
@@ -54,7 +55,7 @@ class SPIMI:
     def write_block_to_disk(sorted_block):
         start_time = time.process_time()
 
-        SPIMI.n_blocks += 1
+        SPIMI.n_temp_blocks += 1
 
         # TODO: use os.pathjoin
 
@@ -62,13 +63,13 @@ class SPIMI:
             # is sorted_block is a list of terms
             log.debug("Write sorted_block list")
 
-            with open(f"{SPIMI.INDEX_DIR}/block{SPIMI.n_blocks}", "w") as block_fp:
+            with open(f"{SPIMI.INDEX_DIR}/{TMP_BLK_PREFIX}{SPIMI.n_temp_blocks}", "w") as block_fp:
                 for term, doclist in sorted_block:
                     block_fp.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
         else:  # it's a dictionary
             log.debug("Write sorted_block dict")
-            with open(f"{SPIMI.INDEX_DIR}/block{SPIMI.n_blocks}", "w") as block_fp:
+            with open(f"{SPIMI.INDEX_DIR}/{TMP_BLK_PREFIX}{SPIMI.n_temp_blocks}", "w") as block_fp:
                 for term in sorted_block:
                     doclist = sorted_block[term]
                     block_fp.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
@@ -78,30 +79,33 @@ class SPIMI:
     @staticmethod
     def merge_blocks():
         """Merge blocks in a single index file"""
-        log.debug("Merging %s blocks", SPIMI.n_blocks)
+        log.debug("Merging %s blocks", SPIMI.n_temp_blocks)
 
         # buffers that will contain first `few` records of each block file
         READ_BUFFER_SIZE = 10000
         WRITE_BUFFER_SIZE = 100000
 
-        # writer
-        write_fp = open(f"{SPIMI.INDEX_DIR}/{POSTINGS_FILE_NAME}", "w")
+        secondary_index = []
 
         # readers
-        block_fps = [open(f"{SPIMI.INDEX_DIR}/block{i}", "r") for i in range(1, SPIMI.n_blocks + 1)]
+        tmp_blk_fps = [open(f"{SPIMI.INDEX_DIR}/{TMP_BLK_PREFIX}{i}", "r")
+                       for i in range(1, SPIMI.n_temp_blocks + 1)]
 
         # remaining_lines is a count of read but not processed(not popped from heap) lines from each block
-        remaining_lines = [0 for _ in range(SPIMI.n_blocks)]
+        remaining_lines = [0 for _ in range(SPIMI.n_temp_blocks)]
         minheap = []
 
         # initialize the minheap with first `few` lines of the block files
-        for block_idx, block_fp in enumerate(block_fps):
+        for block_idx, block_fp in enumerate(tmp_blk_fps):
             log.debug("Reading into memory %s", block_fp.name)
             # FIXME: next() may raise StopIterationException if READ_BUF_SIZE exceeds available number of lines
-            for _ in range(READ_BUFFER_SIZE):
-                line = next(block_fp)
-                minheap.append((line.rstrip("\n"), block_idx))
-                remaining_lines[block_idx] += 1
+            try:
+                for _ in range(READ_BUFFER_SIZE):
+                    line = next(block_fp)
+                    minheap.append((line.rstrip("\n"), block_idx))
+                    remaining_lines[block_idx] += 1
+            except StopIteration:
+                log.warning("Block file %s exhausted", tmp_blk_fps[block_idx].name)
 
         heapq.heapify(minheap)  # Convert list to minheap
         log.debug("minheap currently after init length = %s", len(minheap))
@@ -114,38 +118,58 @@ class SPIMI:
             # log.debug("minheap currently after pop: %s", minheap)
             term, docids = line.split(":", 1)
             docids = docids.split(",")
+
+            if len(write_buffer) == 0:  # first entry in block
+                # write name of this primary block file in secondary index
+                # along with the first term to be put into that block
+                secondary_index.append((term, f"{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks + 1}"))
+
             write_buffer[term] = write_buffer.get(term, []) + docids
 
             if len(write_buffer) >= WRITE_BUFFER_SIZE:
-                for term in write_buffer:
-                    # Flush to index file
-                    write_fp.write(
-                        f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+                # Flush to index file
+                SPIMI.n_primary_blocks += 1
+                with open(f"{SPIMI.INDEX_DIR}/{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks}",
+                          "w") as primary_block_fp:
+                    log.debug("Writing primary block: %s", primary_block_fp.name)
+                    for term in write_buffer:
+                        primary_block_fp.write(
+                            f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+
                 write_buffer.clear()
 
             remaining_lines[block_idx] -= 1
             if remaining_lines[block_idx] == 0:
                 # load more lines from that block
-                log.debug("Loading more lines from %s", block_fps[block_idx].name)
+                log.debug("Loading more lines from %s", tmp_blk_fps[block_idx].name)
                 log.debug("remain_lines %s", remaining_lines)
                 try:  # make raise StopIteration
                     for _ in range(READ_BUFFER_SIZE):
-                        newElem = next(block_fps[block_idx])
+                        newElem = next(tmp_blk_fps[block_idx])
                         # log.debug("newElem: %s", newElem)
                         heapq.heappush(minheap, (newElem.rstrip("\n"), block_idx))
                         remaining_lines[block_idx] += 1
                         # log.debug("minheap currently after push: %s", minheap)
                 except StopIteration:
-                    log.warning("Block file %s exhausted", block_fps[block_idx].name)
+                    log.warning("Block file %s exhausted", tmp_blk_fps[block_idx].name)
 
         # Minheap empty but write buffer may have some items
         if write_buffer:
-            for term in write_buffer:
-                # Flush to index file
-                write_fp.write(
-                    f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+            # Flush to index file
+            SPIMI.n_primary_blocks += 1
+            with open(f"{SPIMI.INDEX_DIR}/{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks}", "w") as primary_block_fp:
+                log.debug("Writing primary block: %s", primary_block_fp.name)
+                for term in write_buffer:
+                    primary_block_fp.write(
+                        f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+            write_buffer.clear()
 
-        # Close files
-        write_fp.close()
-        for block_fp in block_fps:
-            block_fp.close()
+        # write to secondary index files
+        with open(f"{SPIMI.INDEX_DIR}/{SECONDARY_INDEX_FILE}", "w") as secondary_index_fp:
+            log.debug("Writing secondary index to: %s", secondary_index_fp.name)
+            secondary_index_fp.write(str(secondary_index))
+
+        for tmp_blk in tmp_blk_fps:
+            filename = tmp_blk.name
+            tmp_blk.close()
+            # os.remove(f"{filename}")  # STOPSHIP uncomment
