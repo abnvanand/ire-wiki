@@ -17,8 +17,8 @@ class Tokenizer:
         self.doc_id = -1
         self.body_text = []
 
-        # {token1: {freq:count, zones:set("TBIRC")}}
-        self.term_map = defaultdict(lambda: {FREQUENCY: 0, ZONES: set()})
+        # {token1: {freq:count, zones:dict({"T":2, "B":1}})}}
+        self.term_map = defaultdict(lambda: {FREQUENCY: 0, ZONES: defaultdict(int)})
 
         self.n_terms = 0  # Total no. of terms in `this` doc. needed for normalizing tf
 
@@ -59,9 +59,8 @@ class Tokenizer:
 
             # stemming
             token = stemmer.stem(token, 0, len(token) - 1)
-
             self.term_map[token][FREQUENCY] += 1  # TODO: use collections.Counter if possible
-            self.term_map[token][ZONES] |= set(field_type)
+            self.term_map[token][ZONES][field_type] += 1
             self.n_terms += 1  # counts repeated terms as well
 
     def extract_body(self, body_text):

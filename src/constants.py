@@ -8,10 +8,12 @@ DOC_ID_TITLE_MAPPING_FILE_NAME = "docid-title-map.txt"
 STOPWORDS_FILE_PATH = "stopwords.txt"
 
 TERM_POSTINGS_SEP = ":"
-DOCIDS_SEP = ","
+DOCIDS_SEP = ";"
 POS_SEP = ""
 FIELD_SEP = ""
 DOCID_TF_ZONES_SEP = "|"
+ZONES_SEP = ","
+ZONE_FREQ_SEP = "."
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"

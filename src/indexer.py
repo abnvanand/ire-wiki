@@ -5,8 +5,9 @@ import sys
 import time
 from collections import defaultdict, OrderedDict
 
-from src.constants import TERM_POSTINGS_SEP, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
-    ZONES, FREQUENCY, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE
+from src.constants import ZONES, FREQUENCY, \
+    DEFAULT_INDEX_DIR, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE, POSTINGS_FILE_NAME, \
+    ZONES_SEP, ZONE_FREQ_SEP, DOCID_TF_ZONES_SEP, TERM_POSTINGS_SEP, DOCIDS_SEP
 
 INDEX_BLOCK_MAX_SIZE = 20 * (2 ** 20)  # 10MB  # TODO: adjust
 
@@ -26,8 +27,9 @@ class SPIMI:
         # fill the block
         for term in tokenstream:  # tokenstream is a dict with unique terms
             # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
+            posting = ZONES_SEP.join([f"{k}{ZONE_FREQ_SEP}{v}" for k, v in tokenstream[term][ZONES].items()])
             SPIMI.block[term].append(
-                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{''.join(tokenstream[term][ZONES])}")
+                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{posting}")
 
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:
@@ -46,7 +48,6 @@ class SPIMI:
     @staticmethod
     def sort_terms(dictionary):
         log.debug("sorting dictionary")
-
         # return sorted(dictionary.items())  # to get a sorted list of (key, value) pairs
 
         sorted_dict = OrderedDict()
@@ -58,7 +59,6 @@ class SPIMI:
 
     @staticmethod
     def write_block_to_disk(sorted_block):
-
         SPIMI.n_temp_blocks += 1
 
         if type(sorted_block) == list:
@@ -83,9 +83,12 @@ class SPIMI:
         TOTAL_READ_DATA = 500 * (2 ** 20)  # 500 MB
         READ_BUF_LEN = max(10000 // SPIMI.n_temp_blocks, 100)
         # READ_BUF_SIZE = TOTAL_READ_DATA / SPIMI.n_temp_blocks
-        WRITE_BUF_SIZE = 10 ** 8  # 100 *10^6 = 100 MB
+        WRITE_BUF_SIZE = INDEX_BLOCK_MAX_SIZE
 
         secondary_index = []
+
+        # writer
+        primary_fp = open(os.path.join(SPIMI.INDEX_DIR, POSTINGS_FILE_NAME), "w")
 
         # readers
         tmp_blk_fps = [open(os.path.join(SPIMI.INDEX_DIR, f"{TMP_BLK_PREFIX}{i}"), "r")
@@ -126,7 +129,7 @@ class SPIMI:
 
             # if len(write_buffer) >= WRITE_BUF_SIZE:   # Old way
             if sys.getsizeof(write_buffer) > WRITE_BUF_SIZE:
-                SPIMI.write_primary_block_to_disk(write_buffer)
+                SPIMI.write_primary_block_to_disk(write_buffer, primary_fp)
                 write_buffer.clear()
 
             remaining_lines[block_idx] -= 1
@@ -146,7 +149,7 @@ class SPIMI:
 
         # Minheap empty but write buffer may have some items
         if write_buffer:
-            SPIMI.write_primary_block_to_disk(write_buffer)
+            SPIMI.write_primary_block_to_disk(write_buffer, primary_fp)
             write_buffer.clear()
 
         # write to secondary index files
@@ -154,13 +157,16 @@ class SPIMI:
             log.debug("Writing secondary index to: %s", secondary_index_fp.name)
             secondary_index_fp.write(str(secondary_index))
 
+        # close primary main file
+        primary_fp.close()
+
         for tmp_blk in tmp_blk_fps:
             filename = tmp_blk.name
             tmp_blk.close()
             # os.remove(f"{filename}")  # STOPSHIP uncomment
 
     @staticmethod
-    def write_primary_block_to_disk(write_buffer):
+    def write_primary_block_to_disk(write_buffer, primary_fp):
         # Flush to index file
         SPIMI.n_primary_blocks += 1
         with open(os.path.join(SPIMI.INDEX_DIR, f"{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks}"),
@@ -168,4 +174,6 @@ class SPIMI:
             log.debug("Writing primary block: %s", primary_block_fp.name)
             for term in write_buffer:
                 primary_block_fp.write(
+                    f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+                primary_fp.write(
                     f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
