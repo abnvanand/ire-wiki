@@ -49,8 +49,7 @@ class Search:
         with open(os.path.join(self.index_dir, SECONDARY_INDEX_FILE), 'r') as fp:
             self.secondary_index = eval(fp.read())
 
-    def load_primary(self, block_to_load):
-
+    def load_primary_block(self, block_to_load):
         # TODO: Do not load if already loaded
         if self.nameofBlockCurrentlyInMemory == block_to_load:
             log.debug("Block %s already in memory", block_to_load)
@@ -63,13 +62,17 @@ class Search:
                 line = line.strip()
                 term, postings = line.split(TERM_POSTINGS_SEP)
                 for unit in postings.split(DOCIDS_SEP):
-                    docid, freq, zones = unit.split(DOCID_TF_ZONES_SEP)
-                    self.index[term].append((docid, freq, set(zones)))
+                    docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
+                    zones = {}
+                    for zone_tf in zones_tf_pairs.split(ZONES_SEP):
+                        zone, ztf = zone_tf.split(ZONE_FREQ_SEP)
+                        zones[zone] = ztf
+                    self.index[term].append((docid, freq, zones))
             self.nameofBlockCurrentlyInMemory = block_to_load
 
     def get_index(self, term):
         primary_blk_suffix = bisect(self.secondary_index, (term, "z"))  # FIXME: added "z" to match higher than primaryX
-        self.load_primary(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
+        self.load_primary_block(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
         return self.index[term]
 
     def get_terms(self, line):
