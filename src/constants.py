@@ -12,7 +12,7 @@ DOCIDS_SEP = ";"
 POS_SEP = ""
 FIELD_SEP = ""
 DOCID_TF_ZONES_SEP = "|"
-ZONES_SEP = ","
+ZONES_SEP = "#"  # It's weird that if using ',' here then I got ';' in the postings list whereas '#' works fine
 ZONE_FREQ_SEP = "."
 
 QUERY_FILE = "dumps/queryfile"
