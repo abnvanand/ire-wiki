@@ -8,7 +8,7 @@ from collections import defaultdict, OrderedDict
 from src.constants import TERM_POSTINGS_SEP, DOCIDS_SEP, DEFAULT_INDEX_DIR, DOCID_TF_ZONES_SEP, \
     ZONES, FREQUENCY, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE
 
-INDEX_BLOCK_MAX_SIZE = (10 ** 9)  # 10**9 Bytes = 1GB  # TODO: adjust
+INDEX_BLOCK_MAX_SIZE = 20 * (2 ** 20)  # 10MB  # TODO: adjust
 
 
 class SPIMI:
@@ -32,33 +32,37 @@ class SPIMI:
         if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
                 or is_last_block:
             log.debug("sys.getsizeof(SPIMI.dictionary): %s", sys.getsizeof(SPIMI.block))
+
+            start_time = time.process_time()
             sorted_block = SPIMI.sort_terms(SPIMI.block)
+            log.debug("Block sorted in %s seconds", time.process_time() - start_time)
+
+            start_time = time.process_time()
             SPIMI.write_block_to_disk(sorted_block)
+            log.debug("Block written to disk in %s seconds", time.process_time() - start_time)
+
             SPIMI.block.clear()  # reset the block
 
     @staticmethod
     def sort_terms(dictionary):
-        start_time = time.process_time()
         log.debug("sorting dictionary")
-        # return sorted(dictionary.items())    to get a sorted list of (key, value) pairs
+
+        # return sorted(dictionary.items())  # to get a sorted list of (key, value) pairs
 
         sorted_dict = OrderedDict()
 
         for term in sorted(dictionary):  # calling sorted on a dict returns list of keys in sorted order
             sorted_dict[term] = dictionary[term]
 
-        log.debug("Block sorted in %s seconds", time.process_time() - start_time)
         return sorted_dict
 
     @staticmethod
     def write_block_to_disk(sorted_block):
-        start_time = time.process_time()
 
         SPIMI.n_temp_blocks += 1
 
         if type(sorted_block) == list:
-            # is sorted_block is a list of terms
-
+            # sorted_block is a list of terms
             with open(os.path.join(SPIMI.INDEX_DIR, f"{TMP_BLK_PREFIX}{SPIMI.n_temp_blocks}"), "w") as tmp_blk:
                 log.debug("Writing sorted temp block list in: %s", tmp_blk.name)
                 for term, doclist in sorted_block:
@@ -71,15 +75,13 @@ class SPIMI:
                     doclist = sorted_block[term]
                     tmp_blk.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
-        log.debug("Block written to disk in %s seconds", time.process_time() - start_time)
-
     @staticmethod
     def merge_blocks():
         log.info("Merging %s blocks", SPIMI.n_temp_blocks)
 
         # buffers that will contain first `few` records of each block file
-        TOTAL_READ_DATA = 5 * (10 ** 8)  # 5 * 100 *10^6 = 500 MB
-        READ_BUF_LEN = 100000 // SPIMI.n_temp_blocks
+        TOTAL_READ_DATA = 500 * (2 ** 20)  # 500 MB
+        READ_BUF_LEN = max(10000 // SPIMI.n_temp_blocks, 100)
         # READ_BUF_SIZE = TOTAL_READ_DATA / SPIMI.n_temp_blocks
         WRITE_BUF_SIZE = 10 ** 8  # 100 *10^6 = 100 MB
 

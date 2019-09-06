@@ -1,4 +1,5 @@
 import logging as log
+import time
 import xml.sax
 
 from src.helpers import Helpers
@@ -7,8 +8,10 @@ from src.tokenizer import Tokenizer
 
 
 class WikipediaHandler(xml.sax.ContentHandler):
-    def __init__(self):
+    def __init__(self, INDEX_DIR):
         super().__init__()
+        self.index_dir = INDEX_DIR  # to be passed to indexer
+        self.docCount = 0  # maintain count of docs
         self.tokenizer = None
         self.tag = None
         # title and text and id(documentID) are available as field
@@ -24,6 +27,10 @@ class WikipediaHandler(xml.sax.ContentHandler):
         self.insideRevision = False
 
         self.tokenstream = None
+
+    def startDocument(self):
+        log.debug("startDocument")
+        SPIMI.INDEX_DIR = self.index_dir
 
     def startElement(self, tag, attributes):
         """
@@ -75,7 +82,11 @@ class WikipediaHandler(xml.sax.ContentHandler):
 
         elif tag == "revision":
             self.insideRevision = False  # </revision> encountered
-
+        elif tag == "page":
+            self.docCount += 1
+            if self.docCount % 1000 == 0:
+                # Log processing of every 1000 docs
+                log.debug("Parsed pages till %s, total: %s", self.title, self.docCount)
         self.tag = None
 
     def characters(self, content):
@@ -104,7 +115,9 @@ class WikipediaHandler(xml.sax.ContentHandler):
         SPIMI.spimi_invert(tokenstream=[], is_last_block=True)  # True forces indexer to flush block to disk
 
         # call for merging all blocks
+        start = time.process_time()
         SPIMI.merge_blocks()
+        log.info("Merged in %s", time.process_time() - start)
 
 
 class XMLParser:
@@ -116,7 +129,7 @@ class XMLParser:
         parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
         # override the default ContextHandler
-        handler = WikipediaHandler()
+        handler = WikipediaHandler(INDEX_DIR)
         parser.setContentHandler(handler)
 
         parser.parse(DUMP_PATH)
