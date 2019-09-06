@@ -4,6 +4,7 @@ POSTINGS_FILE_NAME = "postings.txt"
 SECONDARY_INDEX_FILE = "secondary.txt"
 TERM_ID_MAPPING_FILE_NAME = "term-termid-map.txt"
 DOC_ID_TITLE_MAPPING_FILE_NAME = "docid-title-map.txt"
+TERM_OFFSET_FILE = "term-offset.txt"
 
 STOPWORDS_FILE_PATH = "stopwords.txt"
 
@@ -14,6 +15,7 @@ FIELD_SEP = ""
 DOCID_TF_ZONES_SEP = "|"
 ZONES_SEP = ","
 ZONE_FREQ_SEP = "."
+TERM_OFFSET_SEP = "="
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"
@@ -25,3 +27,7 @@ ZONES = "zones"
 
 TMP_BLK_PREFIX = "temp"
 PRIMARY_BLK_PREFIX = "primary"
+
+INDEX_TYPE_BLOCK = "BLOCK"
+INDEX_TYPE_OFFSET = "OFFSET"
+INDEX_TO_USE = "OFFSET"  # BLOCK vs OFFSET

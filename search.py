@@ -1,15 +1,17 @@
 import logging as log
 import os
 import re
+import time
 from bisect import bisect
 from collections import defaultdict
-
+from mmap import mmap
 from src.constants import *
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
+from math import log10
 
 log.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
-                level=log.INFO)  # STOPSHIP
+                level=log.DEBUG)  # STOPSHIP
 
 ONE_WORD_QUERY = "ONE_WORD_QUERY"
 FREE_TEXT_QUERY = "FREE_TEXT_QUERY"
@@ -33,11 +35,20 @@ class Search:
 
         self.docid_title_map = {}
         self.secondary_index = []
+        self.term_offset = {}
+        self.prim_idx_fp = None
 
         self.index = defaultdict(list)
 
         self.n_docs = 0
         self.nameofBlockCurrentlyInMemory = ""
+
+    def load_term_offset_map(self):
+        with open(os.path.join(self.index_dir, TERM_OFFSET_FILE), 'r') as fp:
+            for line in fp:
+                line = line.strip()
+                term, offset = line.split(TERM_OFFSET_SEP)
+                self.term_offset[term] = offset
 
     def load_docid_title(self):
         # {docid: (doctitle, n_terms)}
@@ -48,6 +59,11 @@ class Search:
     def load_secondary_index(self):
         with open(os.path.join(self.index_dir, SECONDARY_INDEX_FILE), 'r') as fp:
             self.secondary_index = eval(fp.read())
+
+    def load_primary_index(self):
+        fp = open(os.path.join(self.index_dir, POSTINGS_FILE_NAME), 'r+b')
+        self.prim_idx_fp = mmap(fp.fileno(), 0)
+        # self.prim_idx_fp.readline()
 
     def load_primary_block(self, block_to_load):
         # TODO: Do not load if already loaded
@@ -71,9 +87,42 @@ class Search:
             self.nameofBlockCurrentlyInMemory = block_to_load
 
     def get_index(self, term):
-        primary_blk_suffix = bisect(self.secondary_index, (term, "z"))  # FIXME: added "z" to match higher than primaryX
-        self.load_primary_block(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
-        return self.index[term]
+        log.debug("Getting postings for term: %s", term)
+        start_time = time.process_time()
+        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
+            primary_blk_suffix = bisect(self.secondary_index,
+                                        (term, "z"))  # FIXME: added "z" to match higher than primaryX
+            self.load_primary_block(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
+            log.debug("Fetched postings in: %s", time.process_time() - start_time)
+            return self.index[term]
+        else:  # INDEX_TO_USE=="OFFSET"
+            res = []
+            offset = self.get_offset(term)
+            if offset == -1:
+                return res
+
+            self.prim_idx_fp.seek(offset)
+
+            line = self.prim_idx_fp.readline()
+            log.debug("Fetched postings in: %s", time.process_time() - start_time)
+            build_start = time.process_time()
+            line = line.decode("utf-8")
+            line = line.rstrip()
+            term, postings = line.split(TERM_POSTINGS_SEP)
+
+            for unit in postings.split(DOCIDS_SEP):
+                docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
+                zones = {}
+                for zone_tf in zones_tf_pairs.split(ZONES_SEP):
+                    zone, ztf = zone_tf.split(ZONE_FREQ_SEP)
+                    zones[zone] = ztf
+                res.append((docid, freq, zones))
+            log.debug("Built postings in: %s", time.process_time() - build_start)
+            return res
+
+    def get_offset(self, term):
+        log.debug("Getting offset for %s", term)
+        return int(self.term_offset.get(term, -1))
 
     def get_terms(self, line):
         line = line.lower()
@@ -86,10 +135,14 @@ class Search:
 
     def search_index(self):
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
-        self.load_secondary_index()
         self.load_docid_title()
+        if INDEX_TO_USE ==INDEX_TYPE_BLOCK:
+            self.load_secondary_index()
 
-        log.debug("Secondary index", self.secondary_index)
+        if INDEX_TO_USE == INDEX_TYPE_OFFSET:
+            self.load_term_offset_map()
+            self.load_primary_index()
+
         queryfp = open(self.QUERY_FILE, "r")
         outputfp = open(self.OUTPUT_FILE, "w")
 
@@ -117,6 +170,9 @@ class Search:
         queryfp.close()
         outputfp.close()
 
+        if INDEX_TO_USE == INDEX_TYPE_OFFSET:
+            self.prim_idx_fp.close()
+
     def one_word_query(self, query):
         terms = self.get_terms(query)
         if len(terms) == 0:
@@ -129,9 +185,10 @@ class Search:
 
         results = []
 
-        for docid, tf, zones in self.get_index(term):
+        postingslist = self.get_index(term)
+        for docid, tf, zones in postingslist:
             n_terms = self.docid_title_map[docid][1]
-            tf_idf_score = float(tf) * self.get_idf(term)
+            tf_idf_score = float(tf) * self.get_idf(len(postingslist))
             results.append((tf_idf_score / n_terms, docid))
 
         docids = [docid for tfidf, docid in sorted(results, reverse=True)[:10]]
@@ -142,10 +199,12 @@ class Search:
         results = set()
         for term in terms:
             if not term.isspace():
-                for docid, tf, zones in self.get_index(term):
+                postingslist = self.get_index(term)
+                for docid, tf, zones in postingslist:
                     n_terms = self.docid_title_map[docid][1]
-                    tf_idf_score = float(tf) * self.get_idf(term)
-                    score = tf_idf_score * self.get_idf(term)  # tfidf_t_d x w_t_q
+                    idf = self.get_idf(len(postingslist))
+                    tf_idf_score = float(tf) * idf
+                    score = tf_idf_score * idf  # tfidf_t_d x w_t_q
                     results.add((score / n_terms, docid))
 
         results = sorted(results, reverse=True)
@@ -187,10 +246,8 @@ class Search:
             docnames.add(self.docid_title_map.get(str(docid)))
         return docnames
 
-    def get_idf(self, term):
+    def get_idf(self, Nt):
         N = self.n_docs
-        Nt = len(self.get_index(term))
-        from math import log10
         return log10(N / Nt)
 
 
@@ -201,6 +258,8 @@ if __name__ == "__main__":
     queryfile = sys.argv[2] if len(sys.argv) > 2 else QUERY_FILE
     outputfile = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_FILE
 
+    start_time = time.process_time()
     srchobj = Search(index_dir, queryfile, outputfile)
     srchobj.search_index()
     log.info(srchobj.n_docs)
+    log.info("Search completed in: %s seconds", time.process_time() - start_time)
