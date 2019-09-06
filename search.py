@@ -136,7 +136,7 @@ class Search:
     def search_index(self):
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
         self.load_docid_title()
-        if INDEX_TO_USE ==INDEX_TYPE_BLOCK:
+        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
             self.load_secondary_index()
 
         if INDEX_TO_USE == INDEX_TYPE_OFFSET:
@@ -198,7 +198,7 @@ class Search:
         terms = self.get_terms(query)
         results = set()
         for term in terms:
-            if not term.isspace():
+            if term and not term.isspace():
                 postingslist = self.get_index(term)
                 for docid, tf, zones in postingslist:
                     n_terms = self.docid_title_map[docid][1]
@@ -216,7 +216,7 @@ class Search:
     def field_query(self, field_query):
         # TODO: decide OR vs AND
         # title:gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
-        docids = set()
+        results = set()
         field_terms = field_query.split()  # will now contain ['t:Sachin', 'b:Tendulkar', ...]
 
         for extended_term in field_terms:
@@ -224,12 +224,22 @@ class Search:
             terms = self.get_terms(query)
             for term in terms:
                 if term and not term.isspace():
-                    for docid, tf, zones in self.get_index(term):
+                    postingslist = self.get_index(term)
+                    import ipdb
+                    ipdb.set_trace()
+                    for docid, tf, zones in postingslist:
                         if field_type_map[ft] in zones:
-                            docids.add(docid)
+                            n_terms = self.docid_title_map[docid][1]
+                            idf = self.get_idf(len(postingslist))
+                            ztf = zones[field_type_map[ft]]
+                            tf_idf_score = float(ztf) * idf
+                            score = tf_idf_score * idf  # tfidf_t_d x w_t_q
+                            results.add((score / n_terms, docid))
+        results = sorted(results, reverse=True)
+        docids = [docid for tfidf, docid in results[:10]]
 
         # TODO: rank results using cosine similarity and weighted zones
-        return list(docids)[:10]
+        return docids
 
     @staticmethod
     def get_query_type(query):
