@@ -117,8 +117,8 @@ class SPIMI:
         while minheap:  # while heap is not empty
             line, block_idx = heapq.heappop(minheap)
 
-            term, docids = line.split(":", 1)
-            docids = docids.split(",")
+            term, docids = line.split(TERM_POSTINGS_SEP, 1)
+            docids = docids.split(DOCIDS_SEP)
 
             if len(write_buffer) == 0:  # first entry in block
                 # write name of this primary block file in secondary index
