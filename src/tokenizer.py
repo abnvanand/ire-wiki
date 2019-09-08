@@ -54,7 +54,7 @@ class Tokenizer:
 
         for token in tokens:
             # stopwords removal
-            if (token in Helpers.get_stopwords()) or (token.isspace()) or (not token):
+            if (not token) or token.isspace() or (token in Helpers.get_stopwords()):
                 continue
 
             # stemming
