@@ -1,21 +1,26 @@
 DEFAULT_DUMP_PATH = "dumps/sample26.xml"
 DEFAULT_INDEX_DIR = "indexes"
-POSTINGS_FILE_NAME = "postings.txt"
-SECONDARY_INDEX_FILE = "secondary.txt"
-TERM_ID_MAPPING_FILE_NAME = "term-termid-map.txt"
-DOC_ID_TITLE_MAPPING_FILE_NAME = "docid-title-map.txt"
-TERM_OFFSET_FILE = "term-offset.txt"
+
+PRIMARY_IDX_FILE = "primary.txt"
+SECONDARY_IDX_FILE = "secondary.txt"            # Used with BLOCK based index
+SECONDARY_IDX_FILE_OFFSETVERSION = "secondary-offset.txt"  # Used with OFFSET based index
+TERIARY_INDEX_FILE = "tertiary.txt"
+
+DOC_TITLES_FILE = "docid-title-map.txt"
+DOC_TITLEOFFSET_FILE = "docid-title-offset.txt"
+DOC_NTERMS_FILE = "docid-termcount-map.txt"
 
 STOPWORDS_FILE_PATH = "stopwords.txt"
 
-TERM_POSTINGS_SEP = ":"
+TERM_POSTINGLIST_SEP = ":"
 DOCIDS_SEP = ";"
-POS_SEP = ""
-FIELD_SEP = ""
 DOCID_TF_ZONES_SEP = "|"
 ZONES_SEP = ","
-ZONE_FREQ_SEP = "."
+ZONE_ZFREQ_SEP = "."
 TERM_OFFSET_SEP = "="
+DOCID_OFFSET_SEP = "="
+DOCID_NTERMS_SEP = "="
+DOCID_TITLE_SEP = "="
 
 QUERY_FILE = "dumps/queryfile"
 OUTPUT_FILE = "dumps/output.txt"

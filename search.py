@@ -1,14 +1,17 @@
 import logging as log
 import os
 import re
+import resource
+import sys
 import time
 from bisect import bisect
 from collections import defaultdict
-from mmap import mmap
+from math import log10
+from operator import itemgetter
+
 from src.constants import *
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
-from math import log10
 
 log.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
                 level=log.DEBUG)  # STOPSHIP
@@ -33,39 +36,88 @@ class Search:
         self.QUERY_FILE = query_file
         self.OUTPUT_FILE = output_file
 
-        self.docid_title_map = {}
         self.secondary_index = []
         self.term_offset = {}
+        self.doctitles_offset_dict = {}
+        self.docid_nterms_dict = {}
         self.prim_idx_fp = None
+        self.doctitles_fp = None
 
         self.index = defaultdict(list)
 
-        self.n_docs = 0
+        self.N_DOCS = 0  # TOTAL Number of docs in corpus
         self.nameofBlockCurrentlyInMemory = ""
 
     def load_term_offset_map(self):
-        with open(os.path.join(self.index_dir, TERM_OFFSET_FILE), 'r') as fp:
+        """Loads entire secondary index (offset version) into memory"""
+        log.debug("Loading offsets to primary index terms from %s in memory",
+                  SECONDARY_IDX_FILE_OFFSETVERSION)
+
+        starttime = time.process_time()
+
+        with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r') as fp:
             for line in fp:
                 line = line.strip()
                 term, offset = line.split(TERM_OFFSET_SEP)
                 self.term_offset[term] = offset
 
+        log.debug("Offsets to primary loaded in %s sec in memory", time.process_time() - starttime)
+
     def load_docid_title(self):
-        # {docid: (doctitle, n_terms)}
-        with open(os.path.join(self.index_dir, DOC_ID_TITLE_MAPPING_FILE_NAME), 'r') as fp:
-            self.docid_title_map = eval(fp.read())
-        self.n_docs = len(self.docid_title_map)
+        """Loads an offset dict into memory and opens a file pointer to actual titles file."""
+        log.debug("Loading doc title offsets from %s into memory dict.", DOC_TITLEOFFSET_FILE)
+        starttime = time.process_time()
+
+        # Load entire offset file into memory
+        with open(os.path.join(self.index_dir, DOC_TITLEOFFSET_FILE)) as fp:
+            for line in fp:
+                docid, offset = line.strip().split(DOCID_OFFSET_SEP)
+                self.doctitles_offset_dict[docid] = int(offset)
+
+        log.debug("Doctitle offset loaded in %s sec", time.process_time() - starttime)
+
+        # Open a pointer to actual titles file (DONOT load the entire file)
+        self.doctitles_fp = open(os.path.join(self.index_dir, DOC_TITLES_FILE), 'r')
+        log.debug("Opened a pointer to doc titles file")
+
+    def load_docid_n_terms(self):
+        """Loads entire n_terms file in memory"""
+        log.debug("Loading doc nterms from %s into memory", DOC_NTERMS_FILE)
+        starttime = time.process_time()
+
+        with open(os.path.join(self.index_dir, DOC_NTERMS_FILE)) as fp:
+            for line in fp:
+                docid, n_terms = line.strip().split(DOCID_NTERMS_SEP)
+                self.docid_nterms_dict[docid] = int(n_terms)
+
+            # Set total number of docs in corpus
+            self.N_DOCS = len(self.docid_nterms_dict)
+
+        log.debug("Doc n_terms loaded in %s sec", time.process_time() - starttime)
 
     def load_secondary_index(self):
-        with open(os.path.join(self.index_dir, SECONDARY_INDEX_FILE), 'r') as fp:
+        log.debug("Loading secondary index from %s", SECONDARY_IDX_FILE)
+        starttime = time.process_time()
+        with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE), 'r') as fp:
             self.secondary_index = eval(fp.read())
+        log.debug("Secondary index loaded in %s sec", time.process_time() - starttime)
 
-    def load_primary_index(self):
-        fp = open(os.path.join(self.index_dir, POSTINGS_FILE_NAME), 'r+b')
-        self.prim_idx_fp = mmap(fp.fileno(), 0)
-        # self.prim_idx_fp.readline()
+    def mmap_primary_index(self):
+        log.debug("Memory mapping primary index from %s", PRIMARY_IDX_FILE)
+        starttime = time.process_time()
+
+        # FIXME: Make sure we have enough swap space available to mmap
+        #   else we will get OSError: [Errno 12] Cannot allocate memory
+        #   swap space must be more than the index file available
+        #   else fallback to file.open()
+        # self.prim_idx_fp = mmap(fp.fileno(), 0)
+        self.prim_idx_fp = open(os.path.join(self.index_dir, PRIMARY_IDX_FILE), 'r+b')
+        log.debug("Pointer to primary index file opened. Non-mmapped version")
 
     def load_primary_block(self, block_to_load):
+        log.debug("Loading primary block from %s", block_to_load)
+        starttime = time.process_time()
+
         # TODO: Do not load if already loaded
         if self.nameofBlockCurrentlyInMemory == block_to_load:
             log.debug("Block %s already in memory", block_to_load)
@@ -76,18 +128,19 @@ class Search:
         with open(os.path.join(self.index_dir, block_to_load), 'r') as fp:
             for line in fp:
                 line = line.strip()
-                term, postings = line.split(TERM_POSTINGS_SEP)
+                term, postings = line.split(TERM_POSTINGLIST_SEP)
                 for unit in postings.split(DOCIDS_SEP):
                     docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
                     zones = {}
                     for zone_tf in zones_tf_pairs.split(ZONES_SEP):
-                        zone, ztf = zone_tf.split(ZONE_FREQ_SEP)
+                        zone, ztf = zone_tf.split(ZONE_ZFREQ_SEP)
                         zones[zone] = ztf
                     self.index[term].append((docid, freq, zones))
             self.nameofBlockCurrentlyInMemory = block_to_load
+        log.debug("Primary block loaded in %s sec", time.process_time() - starttime)
 
-    def get_index(self, term):
-        log.debug("Getting postings for term: %s", term)
+    def get_postinglist(self, term):
+        log.debug("Fetching postings for term: %s", term)
         start_time = time.process_time()
         if INDEX_TO_USE == INDEX_TYPE_BLOCK:
             primary_blk_suffix = bisect(self.secondary_index,
@@ -96,36 +149,39 @@ class Search:
             log.debug("Fetched postings in: %s", time.process_time() - start_time)
             return self.index[term]
         else:  # INDEX_TO_USE=="OFFSET"
-            res = []
-            offset = self.get_offset(term)
-            if offset == -1:
-                return res
+            offset = self.get_term_offset(term)
+            if offset == -1:  # No such term in index
+                return []
 
-            self.prim_idx_fp.seek(offset)
+            self.prim_idx_fp.seek(offset)  # seek to postings location
+
+            res = []
 
             line = self.prim_idx_fp.readline()
             log.debug("Fetched postings in: %s", time.process_time() - start_time)
+
             build_start = time.process_time()
+
             line = line.decode("utf-8")
             line = line.rstrip()
-            term, postings = line.split(TERM_POSTINGS_SEP)
+            term, postings = line.split(TERM_POSTINGLIST_SEP)
 
             for unit in postings.split(DOCIDS_SEP):
                 docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
                 zones = {}
-                for zone_tf in zones_tf_pairs.split(ZONES_SEP):
-                    zone, ztf = zone_tf.split(ZONE_FREQ_SEP)
+                for zone_tf_pair in zones_tf_pairs.split(ZONES_SEP):
+                    zone, ztf = zone_tf_pair.split(ZONE_ZFREQ_SEP)
                     zones[zone] = ztf
                 res.append((docid, freq, zones))
             log.debug("Built postings in: %s", time.process_time() - build_start)
             return res
 
-    def get_offset(self, term):
+    def get_term_offset(self, term):
         log.debug("Getting offset for %s", term)
         return int(self.term_offset.get(term, -1))
 
     def get_terms(self, line):
-        line = line.lower()
+        line = line.lower().strip()
         line = re.sub(r'[^a-z0-9 ]', ' ', line)  # put spaces instead of non-alphanumeric characters
         line = line.split()
         line = [x for x in line if x not in Helpers.stopwords]
@@ -134,14 +190,18 @@ class Search:
         return line
 
     def search_index(self):
+        start_time = time.process_time()
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
-        self.load_docid_title()
-        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
-            self.load_secondary_index()
+        log.debug("Loaded stopwords in %s seconds", time.process_time() - start_time)
 
-        if INDEX_TO_USE == INDEX_TYPE_OFFSET:
+        self.load_docid_title()
+        self.load_docid_n_terms()
+
+        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
+            self.load_secondary_index()  # TODO: check correctness
+        elif INDEX_TO_USE == INDEX_TYPE_OFFSET:
             self.load_term_offset_map()
-            self.load_primary_index()
+            self.mmap_primary_index()
 
         queryfp = open(self.QUERY_FILE, "r")
         outputfp = open(self.OUTPUT_FILE, "w")
@@ -157,13 +217,11 @@ class Search:
             elif query_type == FIELD_QUERY:
                 docids = self.field_query(query)
 
-            docids = list(docids)
-            # TODO: rank results
-
             log.info("Results for query: %s", query.rstrip())
-            for result in self.get_doc_names_from_ids(docids):  # print only 10 results
-                log.info(result)
-                print(result, file=outputfp)
+            doctitles = self.get_doctitles(docids)
+            for doctitle in doctitles:  # print only 10 results
+                log.info(doctitle)
+                print(doctitle, file=outputfp)
             print(file=outputfp)
             log.info("")
 
@@ -184,10 +242,12 @@ class Search:
         term = terms[0]
 
         results = []
+        postingslist = self.get_postinglist(term)
+        if len(postingslist) == 0:
+            return results
 
-        postingslist = self.get_index(term)
-        for docid, tf, zones in postingslist:
-            n_terms = self.docid_title_map[docid][1]
+        for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+            n_terms = self.get_n_terms(docid)
             tf_idf_score = float(tf) * self.get_idf(len(postingslist))
             results.append((tf_idf_score / n_terms, docid))
 
@@ -196,49 +256,77 @@ class Search:
 
     def free_text_query(self, query):
         terms = self.get_terms(query)
-        results = set()
-        for term in terms:
-            if term and not term.isspace():
-                postingslist = self.get_index(term)
-                for docid, tf, zones in postingslist:
-                    n_terms = self.docid_title_map[docid][1]
-                    idf = self.get_idf(len(postingslist))
-                    tf_idf_score = float(tf) * idf
-                    score = tf_idf_score * idf  # tfidf_t_d x w_t_q
-                    results.add((score / n_terms, docid))
+        docs_score = defaultdict(lambda: [0 for _ in terms])
+        for i, term in enumerate(terms):
+            postingslist = self.get_postinglist(term)
+            for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+                tf = float(tf)  # length normalize the document vector
+                tf = log10(1 + tf) / log10(self.docid_nterms_dict[docid])
+                df = len(postingslist)
 
-        results = sorted(results, reverse=True)
-        docids = [docid for tfidf, docid in results[:10]]
+                # Wtd = log(1+tf) * log(N/df)
+                wtd = tf * log10(self.N_DOCS / df)
+                wtq = 1 / len(terms)  # for now treat each query term equally important TODO: do weighted
+                # Dot product of doc's vector's component and query vector's component
+                score = wtd * wtq  # tfidf_t_d x w_t_q
+                docs_score[docid][i] = score
 
-        # TODO: rank results using weighted zones not just tfidf scores
+        for docid in docs_score:
+            docs_score[docid] = sum(docs_score[docid])
+
+        docs_score = sorted(docs_score.items(), key=itemgetter(1), reverse=True)
+        # docs_score = sorted(docs_score, reverse=True)  # x[0] equals the score
+        docids = [docid for docid, score in docs_score[:10]]
+
+        # TODO: rank docs_score using weighted zones not just tfidf scores
         return docids
 
     def field_query(self, field_query):
         # TODO: decide OR vs AND
-        # title:gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
-        results = set()
-        field_terms = field_query.split()  # will now contain ['t:Sachin', 'b:Tendulkar', ...]
+        # title:mahatma gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
+        field_terms = field_query.split()
+        # field_terms now contains ['t:mahatma','gandhi' 'b:arjun',
+        #                           'i:gandhi', 'c:gandhi', 'r:gandhi']
+        docs_score = defaultdict(lambda: [0 for _ in field_terms])
 
-        for extended_term in field_terms:
-            ft, query = extended_term.split(":")  # ft=t, query=Sachin
-            terms = self.get_terms(query)
-            for term in terms:
-                if term and not term.isspace():
-                    postingslist = self.get_index(term)
-                    import ipdb
-                    ipdb.set_trace()
-                    for docid, tf, zones in postingslist:
-                        if field_type_map[ft] in zones:
-                            n_terms = self.docid_title_map[docid][1]
-                            idf = self.get_idf(len(postingslist))
-                            ztf = zones[field_type_map[ft]]
-                            tf_idf_score = float(ztf) * idf
-                            score = tf_idf_score * idf  # tfidf_t_d x w_t_q
-                            results.add((score / n_terms, docid))
-        results = sorted(results, reverse=True)
-        docids = [docid for tfidf, docid in results[:10]]
+        cur_field = ""
+        for i, extended_term in enumerate(field_terms):
+            splits = extended_term.split(":")  # ft=t, query=Sachin
+            if len(splits) > 1:
+                # then ft contains field type
+                cur_field = splits[0]
+                query = splits[1]
+            else:
+                # ft contains the `term`  and query is empty
+                query = splits[0]
 
-        # TODO: rank results using cosine similarity and weighted zones
+            term = self.get_terms(query)
+            if term:
+                term = term[0]
+
+            # get posting for term
+            postingslist = self.get_postinglist(term)
+
+            for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+                if field_type_map[cur_field] not in zones:
+                    continue
+
+                # else this doc has this term in the required zone
+                tf = log10(1 + float(tf)) / log10(self.docid_nterms_dict[docid])
+                df = len(postingslist)
+                # Wtd = log(1+tf) * log(N/df)
+                wtd = tf * log10(self.N_DOCS / df)
+                wtq = 1 / len(field_terms)  # for now treat each query term equally important TODO: do weighted
+                # Dot product of doc's vector's component and query vector's component
+                score = wtd * wtq  # tfidf_t_d x w_t_q
+                docs_score[docid][i] = score
+
+        for docid in docs_score:
+            docs_score[docid] = sum(docs_score[docid])
+        docs_score = sorted(docs_score.items(), key=itemgetter(1), reverse=True)
+        docids = [docid for docid, score in docs_score[:10]]
+
+        # TODO: rank docs_score using weighted zones not just tfidf scores
         return docids
 
     @staticmethod
@@ -250,26 +338,66 @@ class Search:
         else:
             return ONE_WORD_QUERY
 
-    def get_doc_names_from_ids(self, docs):
-        docnames = set()
-        for docid in docs:
-            docnames.add(self.docid_title_map.get(str(docid)))
-        return docnames
-
     def get_idf(self, Nt):
-        N = self.n_docs
-        return log10(N / Nt)
+        return log10(self.N_DOCS / Nt)
+
+    def get_doctitles(self, docids):
+        return [self.get_doctitle(docid) for docid in docids]
+
+    def get_doctitle(self, docid):
+        # First get the offset
+        offset = self.doctitles_offset_dict[docid]
+        # Then seek to offset position in file
+        self.doctitles_fp.seek(int(offset))
+        line = self.doctitles_fp.readline()
+        _, title = line.rstrip().split("=")  # TODO: may remove id from doctitles file
+        return title
+
+    def get_n_terms(self, docid):
+        return self.docid_nterms_dict[docid]
 
 
-if __name__ == "__main__":
-    import sys
+def memory_limit():
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    available_memory_kB = get_memory()
+    resource.setrlimit(resource.RLIMIT_AS, (available_memory_kB * 1024 / 1.1, hard))
+    log.debug("Memory limited to: %s kB", available_memory_kB / 1.1)
+    return available_memory_kB * 1024 / 1.1
 
+
+def get_memory():
+    """Returns available memory in kBs"""
+    with open('/proc/meminfo', 'r') as mem:
+        free_memory = 0
+        for i in mem:
+            sline = i.split()
+            # if str(sline[0]) in ('MemFree:', 'Buffers:', 'Cached:'):
+            #     free_memory += int(sline[1])
+            if str(sline[0]) == 'MemAvailable:':  # Better estimate
+                free_memory = int(sline[1])
+                break
+    log.debug("MemAvailable: %s kB", free_memory)
+    return free_memory
+
+
+def main():
     index_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_INDEX_DIR
     queryfile = sys.argv[2] if len(sys.argv) > 2 else QUERY_FILE
     outputfile = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_FILE
 
     start_time = time.process_time()
+
     srchobj = Search(index_dir, queryfile, outputfile)
     srchobj.search_index()
-    log.info(srchobj.n_docs)
+
+    log.info(srchobj.N_DOCS)
     log.info("Search completed in: %s seconds", time.process_time() - start_time)
+
+
+if __name__ == "__main__":
+    memory_limit()  # Limits maximum memory usage to half of free memory
+    try:
+        main()
+    except MemoryError:
+        sys.stderr.write('MAXIMUM MEMORY EXCEEDED')
+        sys.exit(-1)

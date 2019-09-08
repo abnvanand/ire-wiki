@@ -6,9 +6,10 @@ import time
 from collections import defaultdict, OrderedDict
 
 from src.constants import ZONES, FREQUENCY, \
-    DEFAULT_INDEX_DIR, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_INDEX_FILE, POSTINGS_FILE_NAME, \
-    ZONES_SEP, ZONE_FREQ_SEP, DOCID_TF_ZONES_SEP, TERM_POSTINGS_SEP, DOCIDS_SEP, TERM_OFFSET_FILE, INDEX_TO_USE, \
-    INDEX_TYPE_OFFSET, INDEX_TYPE_BLOCK
+    DEFAULT_INDEX_DIR, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_IDX_FILE, PRIMARY_IDX_FILE, \
+    ZONES_SEP, ZONE_ZFREQ_SEP, DOCID_TF_ZONES_SEP, TERM_POSTINGLIST_SEP, DOCIDS_SEP, SECONDARY_IDX_FILE_OFFSETVERSION, \
+    INDEX_TO_USE, \
+    INDEX_TYPE_OFFSET, INDEX_TYPE_BLOCK, TERIARY_INDEX_FILE
 
 INDEX_BLOCK_MAX_SIZE = 20 * (2 ** 20)  # 20MB  # TODO: adjust
 
@@ -20,31 +21,37 @@ class SPIMI:
     INDEX_DIR = DEFAULT_INDEX_DIR  # FIXME
     n_primary_blocks = 0
 
+    num_current_docs = 0
+    PUSH_LIMIT = 20000
+
     def __init__(self, block_size_limit=None):
         pass
 
     @staticmethod
     def spimi_invert(tokenstream=None, n_terms=1, docid=0, is_last_block=False):
+        SPIMI.num_current_docs += 1
         # fill the block
         for term in tokenstream:  # tokenstream is a dict with unique terms
             # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
-            posting = ZONES_SEP.join([f"{k}{ZONE_FREQ_SEP}{v}" for k, v in tokenstream[term][ZONES].items()])
+            posting = ZONES_SEP.join([f"{k}{ZONE_ZFREQ_SEP}{v}" for k, v in tokenstream[term][ZONES].items()])
             SPIMI.block[term].append(
                 f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{posting}")
 
-        if sys.getsizeof(SPIMI.block) > SPIMI.max_block_size \
+        if SPIMI.num_current_docs >= SPIMI.PUSH_LIMIT \
                 or is_last_block:
+            SPIMI.num_current_docs = 0  # reset
+
             log.debug("sys.getsizeof(SPIMI.dictionary): %s", sys.getsizeof(SPIMI.block))
 
             start_time = time.process_time()
             sorted_block = SPIMI.sort_terms(SPIMI.block)
+            SPIMI.block.clear()  # reset the block
+
             log.debug("Block sorted in %s seconds", time.process_time() - start_time)
 
             start_time = time.process_time()
             SPIMI.write_block_to_disk(sorted_block)
             log.debug("Block written to disk in %s seconds", time.process_time() - start_time)
-
-            SPIMI.block.clear()  # reset the block
 
     @staticmethod
     def sort_terms(dictionary):
@@ -67,33 +74,33 @@ class SPIMI:
             with open(os.path.join(SPIMI.INDEX_DIR, f"{TMP_BLK_PREFIX}{SPIMI.n_temp_blocks}"), "w") as tmp_blk:
                 log.debug("Writing sorted temp block list in: %s", tmp_blk.name)
                 for term, doclist in sorted_block:
-                    tmp_blk.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
+                    tmp_blk.write(f"{term}{TERM_POSTINGLIST_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
         else:  # it's a dictionary
             with open(os.path.join(SPIMI.INDEX_DIR, f"{TMP_BLK_PREFIX}{SPIMI.n_temp_blocks}"), "w") as tmp_blk:
                 log.debug("Writing sorted temp block dict in: %s", tmp_blk.name)
                 for term in sorted_block:
                     doclist = sorted_block[term]
-                    tmp_blk.write(f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(doclist)}\n")
+                    tmp_blk.write(f"{term}{TERM_POSTINGLIST_SEP}{DOCIDS_SEP.join(doclist)}\n")
 
     @staticmethod
     def merge_blocks():
         log.info("Merging %s blocks", SPIMI.n_temp_blocks)
 
         # buffers that will contain first `few` records of each block file
-        TOTAL_READ_DATA = 500 * (2 ** 20)  # 500 MB
-        READ_BUF_LEN = max(10000 // SPIMI.n_temp_blocks, 100)
-        # READ_BUF_SIZE = TOTAL_READ_DATA / SPIMI.n_temp_blocks
-        WRITE_BUF_SIZE = INDEX_BLOCK_MAX_SIZE
+        READ_BUF_LEN = max(10000 // SPIMI.n_temp_blocks, 1000)
+        WRITE_BUF_LEN = 20000
 
         secondary_index = []
 
         primary_fp = None
         offset_fp = None
+        tertiary_fp = None
         if INDEX_TO_USE == INDEX_TYPE_OFFSET:
             # writer
-            primary_fp = open(os.path.join(SPIMI.INDEX_DIR, POSTINGS_FILE_NAME), "w")
-            offset_fp = open(os.path.join(SPIMI.INDEX_DIR, TERM_OFFSET_FILE), "w")
+            primary_fp = open(os.path.join(SPIMI.INDEX_DIR, PRIMARY_IDX_FILE), "w")
+            offset_fp = open(os.path.join(SPIMI.INDEX_DIR, SECONDARY_IDX_FILE_OFFSETVERSION), "w")
+            tertiary_fp = open(os.path.join(SPIMI.INDEX_DIR, TERIARY_INDEX_FILE), "w")
 
         # readers
         tmp_blk_fps = [open(os.path.join(SPIMI.INDEX_DIR, f"{TMP_BLK_PREFIX}{i}"), "r")
@@ -122,7 +129,7 @@ class SPIMI:
         while minheap:  # while heap is not empty
             line, block_idx = heapq.heappop(minheap)
 
-            term, docids = line.split(TERM_POSTINGS_SEP, 1)
+            term, docids = line.split(TERM_POSTINGLIST_SEP, 1)
             docids = docids.split(DOCIDS_SEP)
 
             if len(write_buffer) == 0 and INDEX_TO_USE == INDEX_TYPE_BLOCK:  # first entry in block
@@ -132,10 +139,9 @@ class SPIMI:
 
             write_buffer[term] = write_buffer.get(term, []) + docids
 
-            # if len(write_buffer) >= WRITE_BUF_SIZE:   # Old way
-            if sys.getsizeof(write_buffer) > WRITE_BUF_SIZE:
+            if len(write_buffer) >= WRITE_BUF_LEN:
                 primary_block_fp = SPIMI.get_new_primary_block() if INDEX_TO_USE == INDEX_TYPE_BLOCK else None
-                SPIMI.write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp)
+                SPIMI.write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp, tertiary_fp)
                 write_buffer.clear()
 
             remaining_lines[block_idx] -= 1
@@ -156,12 +162,12 @@ class SPIMI:
         # Minheap empty but write buffer may have some items
         if write_buffer:
             primary_block_fp = SPIMI.get_new_primary_block() if INDEX_TO_USE == INDEX_TYPE_BLOCK else None
-            SPIMI.write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp)
+            SPIMI.write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp, tertiary_fp)
             write_buffer.clear()
 
         # write to secondary index files
         if INDEX_TO_USE == INDEX_TYPE_BLOCK:
-            with open(os.path.join(SPIMI.INDEX_DIR, f"{SECONDARY_INDEX_FILE}"), "w") as secondary_index_fp:
+            with open(os.path.join(SPIMI.INDEX_DIR, f"{SECONDARY_IDX_FILE}"), "w") as secondary_index_fp:
                 log.debug("Writing secondary index to: %s", secondary_index_fp.name)
                 secondary_index_fp.write(str(secondary_index))
 
@@ -169,6 +175,7 @@ class SPIMI:
             # close primary main file
             primary_fp.close()
             offset_fp.close()
+            tertiary_fp.close()
 
         for tmp_blk in tmp_blk_fps:
             filename = tmp_blk.name
@@ -176,16 +183,25 @@ class SPIMI:
             # os.remove(f"{filename}")  # STOPSHIP uncomment
 
     @staticmethod
-    def write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp):
+    def write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp, tertiary_fp):
+        log.debug("Writing primary block to disk")
+        starttime = time.process_time()
+        tertiary_limit = 1000  # writes to tertiary for every n terms in secondary
         # Flush to index file
         for term in write_buffer:
             if INDEX_TO_USE == INDEX_TYPE_BLOCK:
                 primary_block_fp.write(
-                    f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+                    f"{term}{TERM_POSTINGLIST_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
             elif INDEX_TO_USE == INDEX_TYPE_OFFSET:
+                tertiary_limit -= 1
+                if tertiary_limit <= 0:
+                    tertiary_limit = 1000
+                    tertiary_fp.write(f"{term}={offset_fp.tell()}\n")
+
                 offset_fp.write(f"{term}={primary_fp.tell()}\n")
                 primary_fp.write(
-                    f"{term}{TERM_POSTINGS_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+                    f"{term}{TERM_POSTINGLIST_SEP}{DOCIDS_SEP.join(write_buffer[term])}\n")
+        log.debug("Written to primary in %s seconds", time.process_time() - starttime)
 
     @staticmethod
     def get_new_primary_block():
