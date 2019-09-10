@@ -22,7 +22,7 @@ class SPIMI:
     n_primary_blocks = 0
 
     num_current_docs = 0
-    PUSH_LIMIT = 20000
+    PUSH_LIMIT = 1500000
 
     def __init__(self, block_size_limit=None):
         pass
@@ -34,10 +34,12 @@ class SPIMI:
         for term in tokenstream:  # tokenstream is a dict with unique terms
             # Structure of block=> {term1: ["docid1|45|BIT", "docid2|31|ITB"], term2:[....]}
             posting = ZONES_SEP.join([f"{k}{ZONE_ZFREQ_SEP}{v}" for k, v in tokenstream[term][ZONES].items()])
+            # Append a tuple (tf, posting) tf will be used to sort postings of a term
             SPIMI.block[term].append(
-                f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{posting}")
+                (tokenstream[term][FREQUENCY],
+                 f"{docid}{DOCID_TF_ZONES_SEP}{tokenstream[term][FREQUENCY]}{DOCID_TF_ZONES_SEP}{posting}"))
 
-        if SPIMI.num_current_docs >= SPIMI.PUSH_LIMIT \
+        if len(SPIMI.block) >= SPIMI.PUSH_LIMIT \
                 or is_last_block:
             SPIMI.num_current_docs = 0  # reset
 
@@ -61,7 +63,10 @@ class SPIMI:
         sorted_dict = OrderedDict()
 
         for term in sorted(dictionary):  # calling sorted on a dict returns list of keys in sorted order
-            sorted_dict[term] = dictionary[term]
+            postings = dictionary[term]
+            # Sort by the tf value
+            postings = sorted(postings, key=lambda x: x[0], reverse=True)
+            sorted_dict[term] = [x[1] for x in postings]
 
         return sorted_dict
 
@@ -137,7 +142,7 @@ class SPIMI:
                 # along with the first term to be put into that block
                 secondary_index.append((term, f"{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks + 1}"))
 
-            write_buffer[term] = write_buffer.get(term, []) + docids
+            write_buffer[term] = SPIMI.merge_postings_lists(write_buffer.get(term, []), docids)
 
             if len(write_buffer) >= WRITE_BUF_LEN:
                 primary_block_fp = SPIMI.get_new_primary_block() if INDEX_TO_USE == INDEX_TYPE_BLOCK else None
@@ -208,3 +213,24 @@ class SPIMI:
         SPIMI.n_primary_blocks += 1
         primary_block_fp = open(os.path.join(SPIMI.INDEX_DIR, f"{PRIMARY_BLK_PREFIX}{SPIMI.n_primary_blocks}"), "w")
         return primary_block_fp
+
+    @staticmethod
+    def get_tf(posting):
+        _, tf, __ = posting.split(DOCID_TF_ZONES_SEP)
+        return int(tf)
+
+    @staticmethod
+    def merge_postings_lists(list1, list2):
+        merge = []
+        l1 = 0
+        l2 = 0
+        while l1 < len(list1) and l2 < len(list2):
+            if SPIMI.get_tf(list1[l1]) > SPIMI.get_tf(list2[l2]):
+                merge.append(list1[l1])
+                l1 += 1
+            else:
+                merge.append(list2[l2])
+                l2 += 1
+        merge += list1[l1:]
+        merge += list2[l2:]
+        return merge
