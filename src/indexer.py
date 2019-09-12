@@ -167,7 +167,7 @@ class SPIMI:
         for tmp_blk in tmp_blk_fps:
             filename = tmp_blk.name
             tmp_blk.close()
-            # os.remove(f"{filename}")  # STOPSHIP uncomment
+            os.remove(f"{filename}")
 
     @staticmethod
     def write_primary_block_to_disk(write_buffer, primary_fp, offset_fp, tertiary_fp):

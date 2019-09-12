@@ -94,10 +94,10 @@ class Search:
     def mmap_primary_index(self):
         log.debug("Memory mapping primary index from %s", PRIMARY_IDX_FILE)
 
-        # FIXME: Make sure we have enough swap space available to mmap
-        #   else we will get OSError: [Errno 12] Cannot allocate memory
-        #   swap space must be more than the index file available
-        #   else fallback to file.open()
+        # Make sure we have enough swap space available to mmap
+        # else we will get OSError: [Errno 12] Cannot allocate memory
+        # swap space must be more than the index file available
+        # else fallback to file.open()
         # self.prim_idx_fp = mmap(fp.fileno(), 0)
         self.prim_idx_fp = open(os.path.join(self.index_dir, PRIMARY_IDX_FILE), 'r+b')
         log.debug("Pointer to primary index file opened. Non-mmapped version")
@@ -130,7 +130,6 @@ class Search:
         line = line.rstrip()
         term, postings = line.split(TERM_POSTINGLIST_SEP)
 
-        # STOPSHIP limit to first FEW entries of postings list.
         for unit in postings.split(DOCIDS_SEP):
             docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
             zones = {}
@@ -155,6 +154,8 @@ class Search:
         res = [(docid, freq, zones) for zonescore, docid, freq, zones in sorted(res, reverse=True)[:15000]]
         # res.reverse()
         log.debug("Built postings in: %s", time.process_time() - build_start)
+
+        # limit to first FEW entries of postings list.
         return res[:40000]
 
     def get_term_offset(self, term):
@@ -270,14 +271,14 @@ class Search:
         docs_score = defaultdict(lambda: [0 for _ in terms])
         for i, term in enumerate(terms):
             postingslist = self.get_postinglist(term)
-            for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+            for docid, tf, zones in postingslist:
                 tf = int(tf)  # length normalize the document vector
                 tf = log10(1 + tf) / log10(self.get_n_terms(docid))
                 df = len(postingslist)
 
                 # Wtd = log(1+tf) * log(N/df)
                 wtd = tf * log10(self.N_DOCS / df)
-                # for now treat each query term equally important TODO: do weighted
+                # for now treat each query term equally important
                 wtq = log10(self.N_DOCS / df) / len(terms)
                 # Dot product of doc's vector's component and query vector's component
                 score = wtd * wtq  # tfidf_t_d x w_t_q
@@ -290,11 +291,9 @@ class Search:
         # docs_score = sorted(docs_score, reverse=True)  # x[0] equals the score
         docids = [docid for docid, score in docs_score[:10]]
 
-        # TODO: rank docs_score using weighted zones not just tfidf scores
         return docids
 
     def field_query(self, field_query):
-        # TODO: decide OR vs AND
         # title:mahatma gandhi body:arjun infobox:gandhi category:gandhi ref:gandhi
         field_terms = field_query.split()
         # field_terms now contains ['t:mahatma','gandhi' 'b:arjun',
@@ -319,7 +318,7 @@ class Search:
             # get posting for term
             postingslist = self.get_postinglist(term, field_type_map[cur_field])
 
-            for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+            for docid, tf, zones in postingslist:
                 if field_type_map[cur_field] not in zones:
                     continue
 
@@ -338,7 +337,6 @@ class Search:
         docs_score = sorted(docs_score.items(), key=itemgetter(1), reverse=True)
         docids = [docid for docid, score in docs_score[:10]]
 
-        # TODO: rank docs_score using weighted zones not just tfidf scores
         return docids
 
     @staticmethod
@@ -362,7 +360,7 @@ class Search:
         # Then seek to offset position in file
         self.doctitles_fp.seek(int(offset))
         line = self.doctitles_fp.readline()
-        _, title = line.rstrip().split("=")  # TODO: may remove id from doctitles file
+        _, title = line.rstrip().split("=")
         return title
 
     def get_n_terms(self, docid):
