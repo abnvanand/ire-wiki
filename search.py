@@ -29,12 +29,12 @@ field_type_map = {
 }
 
 zone_weights = {
-    "T": 1200 / 2022,
-    "B": 800 / 2022,
-    "I": 10 / 2022,
-    "C": 10 / 2022,
-    "R": 1 / 2022,
-    "L": 1 / 2022
+    "T": 500 / 1022,
+    "B": 500 / 1022,
+    "I": 10 / 1022,
+    "C": 10 / 1022,
+    "R": 1 / 1022,
+    "L": 1 / 1022
 }
 
 
@@ -143,19 +143,19 @@ class Search:
                 # make sure to only include postings which have that zone
                 continue
 
-            # zone_score = 0
-            # for z in zones:
-            #     zone_score += zones[z] * zone_weights[z.upper()]
+            zone_score = 0
+            for z in zones:
+                zone_score += int(zones[z]) * zone_weights[z.upper()]
 
             # rank the postings by zone based scoring
             # so that we only return FEW good postings
-            res.append((docid, freq, zones))
-            # res.append((zone_score, docid, freq, zones))
+            # res.append((docid, freq, zones))
+            res.append((zone_score, docid, freq, zones))
 
-            # res = [(docid, freq, zones) for zonescore, docid, freq, zones in sorted(res, reverse=True)[:15000]]
-            res.reverse()
-            log.debug("Built postings in: %s", time.process_time() - build_start)
-        return res[:5000]
+        res = [(docid, freq, zones) for zonescore, docid, freq, zones in sorted(res, reverse=True)[:15000]]
+        # res.reverse()
+        log.debug("Built postings in: %s", time.process_time() - build_start)
+        return res[:40000]
 
     def get_term_offset(self, term):
         log.debug("Getting offset for %s", term)
@@ -187,9 +187,9 @@ class Search:
         return line
 
     def search_index(self):
-        start_time = time.process_time()
+        begin = time.process_time()
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
-        log.debug("Stopwords loaded in: %s sec", time.process_time() - start_time)
+        log.debug("Stopwords loaded in: %s sec", time.process_time() - begin)
 
         start_time = time.process_time()
         self.load_docinfo()
@@ -200,17 +200,23 @@ class Search:
         self.mmap_secondary_index()
         self.mmap_primary_index()
 
-        log.info("Loading indexes completed in %s seconds", time.process_time() - start_time)
+        log.info("Loading indexes completed in %s seconds", time.process_time() - begin)
 
-        queryfp = open(self.QUERY_FILE, "r")
-        outputfp = open(self.OUTPUT_FILE, "w")
+        # queryfp = open(self.QUERY_FILE, "r")
+        # outputfp = open(self.OUTPUT_FILE, "w")
 
-        start_time = time.process_time()
+        # start_time = time.process_time()
 
         # Loop over each query
-        for query in queryfp:
+        # for query in queryfp:
+        while True:
+            query = input("Enter query: ")
             docids = []
+
             query_type = self.get_query_type(query)
+
+            start_time = time.process_time()
+
             if query_type == ONE_WORD_QUERY:
                 docids = self.one_word_query(query)
             elif query_type == FREE_TEXT_QUERY:
@@ -222,14 +228,15 @@ class Search:
             doctitles = self.get_doctitles(docids)
             for doctitle in doctitles:  # print only 10 results
                 log.info(doctitle)
-                print(doctitle, file=outputfp)
-            print(file=outputfp)
+                # print(doctitle, file=outputfp)
+            # print(file=outputfp)
             log.info("")
+            log.info("Fetched in: %s sec", time.process_time() - start_time)
 
-        log.debug("Search completed in: %s sec", time.process_time() - start_time)
+        # log.info("Fetched in: %s sec", time.process_time() - start_time)
 
-        queryfp.close()
-        outputfp.close()
+        # queryfp.close()
+        # outputfp.close()
 
         self.prim_idx_fp.close()
         self.secondary_fp.close()
@@ -270,7 +277,8 @@ class Search:
 
                 # Wtd = log(1+tf) * log(N/df)
                 wtd = tf * log10(self.N_DOCS / df)
-                wtq = 1 / len(terms)  # for now treat each query term equally important TODO: do weighted
+                # for now treat each query term equally important TODO: do weighted
+                wtq = log10(self.N_DOCS / df) / len(terms)
                 # Dot product of doc's vector's component and query vector's component
                 score = wtd * wtq  # tfidf_t_d x w_t_q
                 docs_score[docid][i] = score
@@ -399,7 +407,7 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Running in memory limit: ", memory_limit())  # Limits maximum memory usage
+    # print("Running in memory limit: ", memory_limit())  # Limits maximum memory usage
     try:
         main()
     except MemoryError:
