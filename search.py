@@ -39,10 +39,8 @@ zone_weights = {
 
 
 class Search:
-    def __init__(self, indexdir, query_file, output_file):
+    def __init__(self, indexdir):
         self.index_dir = indexdir
-        self.QUERY_FILE = query_file
-        self.OUTPUT_FILE = output_file
 
         self.docid_info_dict = {}
         self.doctitles_fp = None
@@ -203,13 +201,6 @@ class Search:
 
         log.info("Loading indexes completed in %s seconds", time.process_time() - begin)
 
-        # queryfp = open(self.QUERY_FILE, "r")
-        # outputfp = open(self.OUTPUT_FILE, "w")
-
-        # start_time = time.process_time()
-
-        # Loop over each query
-        # for query in queryfp:
         while True:
             query = input("Enter query: ")
             docids = []
@@ -229,15 +220,8 @@ class Search:
             doctitles = self.get_doctitles(docids)
             for doctitle in doctitles:  # print only 10 results
                 log.info(doctitle)
-                # print(doctitle, file=outputfp)
-            # print(file=outputfp)
             log.info("")
             log.info("Fetched in: %s sec", time.process_time() - start_time)
-
-        # log.info("Fetched in: %s sec", time.process_time() - start_time)
-
-        # queryfp.close()
-        # outputfp.close()
 
         self.prim_idx_fp.close()
         self.secondary_fp.close()
@@ -392,12 +376,10 @@ def get_memory():
 
 def main():
     index_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_INDEX_DIR
-    queryfile = sys.argv[2] if len(sys.argv) > 2 else QUERY_FILE
-    outputfile = sys.argv[3] if len(sys.argv) > 3 else OUTPUT_FILE
 
     start_time = time.process_time()
 
-    srchobj = Search(index_dir, queryfile, outputfile)
+    srchobj = Search(index_dir)
     srchobj.search_index()
 
     log.info(srchobj.N_DOCS)
