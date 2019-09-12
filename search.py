@@ -4,17 +4,16 @@ import re
 import resource
 import sys
 import time
-from bisect import bisect
+from bisect import bisect, bisect_left
 from collections import defaultdict
 from math import log10
 from operator import itemgetter
-
 from src.constants import *
 from src.helpers import Helpers
 from src.stemmer import PorterStemmer
 
 log.basicConfig(format='%(levelname)s: %(filename)s-%(funcName)s()-%(message)s',
-                level=log.DEBUG)  # STOPSHIP
+                level=log.INFO)  # STOPSHIP
 
 ONE_WORD_QUERY = "ONE_WORD_QUERY"
 FREE_TEXT_QUERY = "FREE_TEXT_QUERY"
@@ -37,10 +36,15 @@ class Search:
         self.OUTPUT_FILE = output_file
 
         self.secondary_index = []
-        self.term_offset = {}
-        self.doctitles_offset_dict = {}
-        self.docid_nterms_dict = {}
+        # self.term_offset_dict = {}
+        # self.term_offset_list = []
+        # self.doctitles_offset_dict = {}
+        # self.docid_nterms_list = []
+        self.docid_info_dict = {}
+        # self.docid_nterms_dict = {}
+        self.tertiary_offset_list = []
         self.prim_idx_fp = None
+        self.secondary_fp = None
         self.doctitles_fp = None
 
         self.index = defaultdict(list)
@@ -48,52 +52,93 @@ class Search:
         self.N_DOCS = 0  # TOTAL Number of docs in corpus
         self.nameofBlockCurrentlyInMemory = ""
 
-    def load_term_offset_map(self):
-        """Loads entire secondary index (offset version) into memory"""
-        log.debug("Loading offsets to primary index terms from %s in memory",
-                  SECONDARY_IDX_FILE_OFFSETVERSION)
+    def load_tertiary_map(self):
+        """Loads entire tertiary index into memory"""
+        log.debug("Loading tertiary index terms from %s in memory",
+                  TERIARY_INDEX_FILE)
 
         starttime = time.process_time()
+        tertiary_offset_list = []
 
-        with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r') as fp:
+        with open(os.path.join(self.index_dir, TERIARY_INDEX_FILE), 'r') as fp:
             for line in fp:
                 line = line.strip()
                 term, offset = line.split(TERM_OFFSET_SEP)
-                self.term_offset[term] = offset
+                tertiary_offset_list.append((term, offset))
+                # self.term_offset_dict[term] = offset
+        self.tertiary_offset_list = tuple(tertiary_offset_list)
+        tertiary_offset_list.clear()
+        del tertiary_offset_list
+        log.debug("Tertiary index loaded in %s sec in memory", time.process_time() - starttime)
 
-        log.debug("Offsets to primary loaded in %s sec in memory", time.process_time() - starttime)
+    # def load_term_offset_map(self):
+    #     """Loads entire secondary index (offset version) into memory"""
+    #     log.debug("Loading offsets to primary index terms from %s in memory",
+    #               SECONDARY_IDX_FILE_OFFSETVERSION)
+    #
+    #     starttime = time.process_time()
+    #     term_offset_list = []
+    #     with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r') as fp:
+    #         for line in fp:
+    #             line = line.strip()
+    #             term, offset = line.split(TERM_OFFSET_SEP)
+    #             term_offset_list.append((term, offset))
+    #             # self.term_offset_dict[term] = offset
+    #     self.term_offset_list = tuple(term_offset_list)
+    #     term_offset_list.clear()
+    #     del term_offset_list
+    #     log.debug("Offsets to primary loaded in %s sec in memory", time.process_time() - starttime)
 
-    def load_docid_title(self):
-        """Loads an offset dict into memory and opens a file pointer to actual titles file."""
-        log.debug("Loading doc title offsets from %s into memory dict.", DOC_TITLEOFFSET_FILE)
-        starttime = time.process_time()
+    # def load_docid_title(self):
+    #     """Loads an offset dict into memory and opens a file pointer to actual titles file."""
+    #     log.debug("Loading doc title offsets from %s into memory dict.", DOC_TITLEOFFSET_FILE)
+    #     starttime = time.process_time()
+    #
+    #     # Load entire offset file into memory
+    #     with open(os.path.join(self.index_dir, DOC_TITLEOFFSET_FILE)) as fp:
+    #         for line in fp:
+    #             docid, offset = line.strip().split(DOCID_OFFSET_SEP)
+    #             self.doctitles_offset_dict[docid] = int(offset)
+    #
+    #     log.debug("Doctitle offset loaded in %s sec", time.process_time() - starttime)
+    #
+    #     # Open a pointer to actual titles file (DONOT load the entire file)
+    #     self.doctitles_fp = open(os.path.join(self.index_dir, DOC_TITLES_FILE), 'r')
+    #     log.debug("Opened a pointer to doc titles file")
 
-        # Load entire offset file into memory
-        with open(os.path.join(self.index_dir, DOC_TITLEOFFSET_FILE)) as fp:
-            for line in fp:
-                docid, offset = line.strip().split(DOCID_OFFSET_SEP)
-                self.doctitles_offset_dict[docid] = int(offset)
+    def load_docinfo(self):
+        """Loads title offsets and n_terms in memory"""
+        log.debug("Loading doc nterms from %s and title offsets from %s",
+                  DOC_NTERMS_FILE, DOC_TITLEOFFSET_FILE)
 
-        log.debug("Doctitle offset loaded in %s sec", time.process_time() - starttime)
+        with open(os.path.join(self.index_dir, DOC_NTERMS_FILE)) as nterms_fp, \
+                open(os.path.join(self.index_dir, DOC_TITLEOFFSET_FILE)) as offset_fp:
+            for line in nterms_fp:
+                docid, n_terms = line.strip().split(DOCID_NTERMS_SEP)
+                docid, offset = offset_fp.readline().strip().split(DOCID_OFFSET_SEP)
+                self.docid_info_dict[docid] = (int(n_terms), offset)
+
+            # Set total number of docs in corpus
+            self.N_DOCS = len(self.docid_info_dict)
 
         # Open a pointer to actual titles file (DONOT load the entire file)
         self.doctitles_fp = open(os.path.join(self.index_dir, DOC_TITLES_FILE), 'r')
         log.debug("Opened a pointer to doc titles file")
 
-    def load_docid_n_terms(self):
-        """Loads entire n_terms file in memory"""
-        log.debug("Loading doc nterms from %s into memory", DOC_NTERMS_FILE)
-        starttime = time.process_time()
-
-        with open(os.path.join(self.index_dir, DOC_NTERMS_FILE)) as fp:
-            for line in fp:
-                docid, n_terms = line.strip().split(DOCID_NTERMS_SEP)
-                self.docid_nterms_dict[docid] = int(n_terms)
-
-            # Set total number of docs in corpus
-            self.N_DOCS = len(self.docid_nterms_dict)
-
-        log.debug("Doc n_terms loaded in %s sec", time.process_time() - starttime)
+    # def load_docid_n_terms(self):
+    #     """Loads entire n_terms file in memory"""
+    #     log.debug("Loading doc nterms from %s into memory", DOC_NTERMS_FILE)
+    #     starttime = time.process_time()
+    #
+    #     with open(os.path.join(self.index_dir, DOC_NTERMS_FILE)) as fp:
+    #         for line in fp:
+    #             docid, n_terms = line.strip().split(DOCID_NTERMS_SEP)
+    #             self.docid_nterms_dict[docid] = int(n_terms)
+    #
+    #         # Set total number of docs in corpus
+    #         self.N_DOCS = len(self.docid_nterms_dict)
+    #
+    #     log.debug("Doc n_terms loaded in %s sec", time.process_time() - starttime)
 
     def load_secondary_index(self):
         log.debug("Loading secondary index from %s", SECONDARY_IDX_FILE)
@@ -104,7 +149,6 @@ class Search:
 
     def mmap_primary_index(self):
         log.debug("Memory mapping primary index from %s", PRIMARY_IDX_FILE)
-        starttime = time.process_time()
 
         # FIXME: Make sure we have enough swap space available to mmap
         #   else we will get OSError: [Errno 12] Cannot allocate memory
@@ -113,6 +157,12 @@ class Search:
         # self.prim_idx_fp = mmap(fp.fileno(), 0)
         self.prim_idx_fp = open(os.path.join(self.index_dir, PRIMARY_IDX_FILE), 'r+b')
         log.debug("Pointer to primary index file opened. Non-mmapped version")
+
+    def mmap_secondary_index(self):
+        log.debug("Memory mapping secondary index from %s", SECONDARY_IDX_FILE_OFFSETVERSION)
+
+        self.secondary_fp = open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r')
+        log.debug("Pointer to secondary index file opened. Non-mmapped version")
 
     def load_primary_block(self, block_to_load):
         log.debug("Loading primary block from %s", block_to_load)
@@ -166,7 +216,7 @@ class Search:
             line = line.rstrip()
             term, postings = line.split(TERM_POSTINGLIST_SEP)
 
-            for unit in postings.split(DOCIDS_SEP):
+            for unit in postings.split(DOCIDS_SEP)[:5000]:  # STOPSHIP limit to just 100 find better value
                 docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
                 zones = {}
                 for zone_tf_pair in zones_tf_pairs.split(ZONES_SEP):
@@ -178,7 +228,23 @@ class Search:
 
     def get_term_offset(self, term):
         log.debug("Getting offset for %s", term)
-        return int(self.term_offset.get(term, -1))
+
+        # eg ['dog', 'feelanc', 'ganga']; term="feel"
+        # so idx returned will be 1
+        # but we need to search postings starting from term dog
+        # bcoz feel lies before feelanc
+        idx = bisect_left(self.tertiary_offset_list, (term, 0))
+        idx = max(idx - 1, 0)
+        secondary_offset = self.tertiary_offset_list[idx][1]
+        # secondary_offset
+        self.secondary_fp.seek(int(secondary_offset))
+        for _ in range(TERTIARY_GAP + 2):
+            line = self.secondary_fp.readline()
+            secondary_term, primary_offset = line.strip().split(TERM_OFFSET_SEP)
+            if secondary_term == term:
+                return int(primary_offset)
+
+        return -1
 
     def get_terms(self, line):
         line = line.lower().strip()
@@ -192,19 +258,26 @@ class Search:
     def search_index(self):
         start_time = time.process_time()
         Helpers.load_stopwords(STOPWORDS_FILE_PATH)
-        log.debug("Loaded stopwords in %s seconds", time.process_time() - start_time)
+        log.debug("Stopwords loaded in: %s sec", time.process_time() - start_time)
 
-        self.load_docid_title()
-        self.load_docid_n_terms()
+        start_time = time.process_time()
+        self.load_docinfo()
+        log.debug("Doc info loaded in: %s sec", time.process_time() - start_time)
 
+        start_time = time.process_time()
         if INDEX_TO_USE == INDEX_TYPE_BLOCK:
             self.load_secondary_index()  # TODO: check correctness
         elif INDEX_TO_USE == INDEX_TYPE_OFFSET:
-            self.load_term_offset_map()
+            self.load_tertiary_map()
+            self.mmap_secondary_index()
             self.mmap_primary_index()
+
+        log.info("Loading indexes completed in %s seconds", time.process_time() - start_time)
 
         queryfp = open(self.QUERY_FILE, "r")
         outputfp = open(self.OUTPUT_FILE, "w")
+
+        start_time = time.process_time()
 
         # Loop over each query
         for query in queryfp:
@@ -224,6 +297,8 @@ class Search:
                 print(doctitle, file=outputfp)
             print(file=outputfp)
             log.info("")
+
+        log.debug("Search completed in: %s sec", time.process_time() - start_time)
 
         queryfp.close()
         outputfp.close()
@@ -261,7 +336,7 @@ class Search:
             postingslist = self.get_postinglist(term)
             for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
                 tf = float(tf)  # length normalize the document vector
-                tf = log10(1 + tf) / log10(self.docid_nterms_dict[docid])
+                tf = log10(1 + tf) / log10(self.get_n_terms(docid))
                 df = len(postingslist)
 
                 # Wtd = log(1+tf) * log(N/df)
@@ -312,7 +387,7 @@ class Search:
                     continue
 
                 # else this doc has this term in the required zone
-                tf = log10(1 + float(tf)) / log10(self.docid_nterms_dict[docid])
+                tf = log10(1 + float(tf)) / log10(self.get_n_terms(docid))
                 df = len(postingslist)
                 # Wtd = log(1+tf) * log(N/df)
                 wtd = tf * log10(self.N_DOCS / df)
@@ -346,7 +421,7 @@ class Search:
 
     def get_doctitle(self, docid):
         # First get the offset
-        offset = self.doctitles_offset_dict[docid]
+        offset = self.docid_info_dict[docid][1]
         # Then seek to offset position in file
         self.doctitles_fp.seek(int(offset))
         line = self.doctitles_fp.readline()
@@ -354,7 +429,7 @@ class Search:
         return title
 
     def get_n_terms(self, docid):
-        return self.docid_nterms_dict[docid]
+        return self.docid_info_dict[docid][0]
 
 
 def memory_limit():
@@ -391,11 +466,11 @@ def main():
     srchobj.search_index()
 
     log.info(srchobj.N_DOCS)
-    log.info("Search completed in: %s seconds", time.process_time() - start_time)
+    log.info("Total time taken by script: %s seconds", time.process_time() - start_time)
 
 
 if __name__ == "__main__":
-    memory_limit()  # Limits maximum memory usage to half of free memory
+    print("Running in memory limit: ", memory_limit())  # Limits maximum memory usage
     try:
         main()
     except MemoryError:

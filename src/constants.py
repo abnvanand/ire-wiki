@@ -2,7 +2,7 @@ DEFAULT_DUMP_PATH = "dumps/sample26.xml"
 DEFAULT_INDEX_DIR = "indexes"
 
 PRIMARY_IDX_FILE = "primary.txt"
-SECONDARY_IDX_FILE = "secondary.txt"            # Used with BLOCK based index
+SECONDARY_IDX_FILE = "secondary.txt"  # Used with BLOCK based index
 SECONDARY_IDX_FILE_OFFSETVERSION = "secondary-offset.txt"  # Used with OFFSET based index
 TERIARY_INDEX_FILE = "tertiary.txt"
 
@@ -36,3 +36,5 @@ PRIMARY_BLK_PREFIX = "primary"
 INDEX_TYPE_BLOCK = "BLOCK"
 INDEX_TYPE_OFFSET = "OFFSET"
 INDEX_TO_USE = "OFFSET"  # BLOCK vs OFFSET
+
+TERTIARY_GAP = 100

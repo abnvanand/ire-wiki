@@ -9,7 +9,7 @@ from src.constants import ZONES, FREQUENCY, \
     DEFAULT_INDEX_DIR, TMP_BLK_PREFIX, PRIMARY_BLK_PREFIX, SECONDARY_IDX_FILE, PRIMARY_IDX_FILE, \
     ZONES_SEP, ZONE_ZFREQ_SEP, DOCID_TF_ZONES_SEP, TERM_POSTINGLIST_SEP, DOCIDS_SEP, SECONDARY_IDX_FILE_OFFSETVERSION, \
     INDEX_TO_USE, \
-    INDEX_TYPE_OFFSET, INDEX_TYPE_BLOCK, TERIARY_INDEX_FILE
+    INDEX_TYPE_OFFSET, INDEX_TYPE_BLOCK, TERIARY_INDEX_FILE, TERTIARY_GAP
 
 INDEX_BLOCK_MAX_SIZE = 20 * (2 ** 20)  # 20MB  # TODO: adjust
 
@@ -93,7 +93,7 @@ class SPIMI:
         log.info("Merging %s blocks", SPIMI.n_temp_blocks)
 
         # buffers that will contain first `few` records of each block file
-        READ_BUF_LEN = max(10000 // SPIMI.n_temp_blocks, 1000)
+        READ_BUF_LEN = max(100000 // SPIMI.n_temp_blocks, 1000)
         WRITE_BUF_LEN = 20000
 
         secondary_index = []
@@ -191,7 +191,7 @@ class SPIMI:
     def write_primary_block_to_disk(write_buffer, primary_block_fp, primary_fp, offset_fp, tertiary_fp):
         log.debug("Writing primary block to disk")
         starttime = time.process_time()
-        tertiary_limit = 1000  # writes to tertiary for every n terms in secondary
+        tertiary_limit = TERTIARY_GAP  # writes to tertiary for every n terms in secondary
         # Flush to index file
         for term in write_buffer:
             if INDEX_TO_USE == INDEX_TYPE_BLOCK:
@@ -200,7 +200,7 @@ class SPIMI:
             elif INDEX_TO_USE == INDEX_TYPE_OFFSET:
                 tertiary_limit -= 1
                 if tertiary_limit <= 0:
-                    tertiary_limit = 1000
+                    tertiary_limit = TERTIARY_GAP
                     tertiary_fp.write(f"{term}={offset_fp.tell()}\n")
 
                 offset_fp.write(f"{term}={primary_fp.tell()}\n")

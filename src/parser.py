@@ -129,7 +129,7 @@ class WikipediaHandler(xml.sax.ContentHandler):
         start = time.process_time()
         SPIMI.merge_blocks()
         log.info("Merged in %s", time.process_time() - start)
-
+        log.info("Num docs: %s", self.docCount)
         self.doctitle_primary_fp.close()
         self.doctitle_offset_fp.close()
         self.doctermcount_fp.close()
