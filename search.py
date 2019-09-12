@@ -28,6 +28,15 @@ field_type_map = {
     "link": "L",
 }
 
+zone_weights = {
+    "T": 1200 / 2022,
+    "B": 800 / 2022,
+    "I": 10 / 2022,
+    "C": 10 / 2022,
+    "R": 1 / 2022,
+    "L": 1 / 2022
+}
+
 
 class Search:
     def __init__(self, indexdir, query_file, output_file):
@@ -35,22 +44,14 @@ class Search:
         self.QUERY_FILE = query_file
         self.OUTPUT_FILE = output_file
 
-        self.secondary_index = []
-        # self.term_offset_dict = {}
-        # self.term_offset_list = []
-        # self.doctitles_offset_dict = {}
-        # self.docid_nterms_list = []
         self.docid_info_dict = {}
-        # self.docid_nterms_dict = {}
-        self.tertiary_offset_list = []
-        self.prim_idx_fp = None
-        self.secondary_fp = None
         self.doctitles_fp = None
 
-        self.index = defaultdict(list)
+        self.prim_idx_fp = None
+        self.secondary_fp = None
+        self.tertiary_offset_list = []
 
         self.N_DOCS = 0  # TOTAL Number of docs in corpus
-        self.nameofBlockCurrentlyInMemory = ""
 
     def load_tertiary_map(self):
         """Loads entire tertiary index into memory"""
@@ -71,41 +72,6 @@ class Search:
         del tertiary_offset_list
         log.debug("Tertiary index loaded in %s sec in memory", time.process_time() - starttime)
 
-    # def load_term_offset_map(self):
-    #     """Loads entire secondary index (offset version) into memory"""
-    #     log.debug("Loading offsets to primary index terms from %s in memory",
-    #               SECONDARY_IDX_FILE_OFFSETVERSION)
-    #
-    #     starttime = time.process_time()
-    #     term_offset_list = []
-    #     with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r') as fp:
-    #         for line in fp:
-    #             line = line.strip()
-    #             term, offset = line.split(TERM_OFFSET_SEP)
-    #             term_offset_list.append((term, offset))
-    #             # self.term_offset_dict[term] = offset
-    #     self.term_offset_list = tuple(term_offset_list)
-    #     term_offset_list.clear()
-    #     del term_offset_list
-    #     log.debug("Offsets to primary loaded in %s sec in memory", time.process_time() - starttime)
-
-    # def load_docid_title(self):
-    #     """Loads an offset dict into memory and opens a file pointer to actual titles file."""
-    #     log.debug("Loading doc title offsets from %s into memory dict.", DOC_TITLEOFFSET_FILE)
-    #     starttime = time.process_time()
-    #
-    #     # Load entire offset file into memory
-    #     with open(os.path.join(self.index_dir, DOC_TITLEOFFSET_FILE)) as fp:
-    #         for line in fp:
-    #             docid, offset = line.strip().split(DOCID_OFFSET_SEP)
-    #             self.doctitles_offset_dict[docid] = int(offset)
-    #
-    #     log.debug("Doctitle offset loaded in %s sec", time.process_time() - starttime)
-    #
-    #     # Open a pointer to actual titles file (DONOT load the entire file)
-    #     self.doctitles_fp = open(os.path.join(self.index_dir, DOC_TITLES_FILE), 'r')
-    #     log.debug("Opened a pointer to doc titles file")
-
     def load_docinfo(self):
         """Loads title offsets and n_terms in memory"""
         log.debug("Loading doc nterms from %s and title offsets from %s",
@@ -125,28 +91,6 @@ class Search:
         self.doctitles_fp = open(os.path.join(self.index_dir, DOC_TITLES_FILE), 'r')
         log.debug("Opened a pointer to doc titles file")
 
-    # def load_docid_n_terms(self):
-    #     """Loads entire n_terms file in memory"""
-    #     log.debug("Loading doc nterms from %s into memory", DOC_NTERMS_FILE)
-    #     starttime = time.process_time()
-    #
-    #     with open(os.path.join(self.index_dir, DOC_NTERMS_FILE)) as fp:
-    #         for line in fp:
-    #             docid, n_terms = line.strip().split(DOCID_NTERMS_SEP)
-    #             self.docid_nterms_dict[docid] = int(n_terms)
-    #
-    #         # Set total number of docs in corpus
-    #         self.N_DOCS = len(self.docid_nterms_dict)
-    #
-    #     log.debug("Doc n_terms loaded in %s sec", time.process_time() - starttime)
-
-    def load_secondary_index(self):
-        log.debug("Loading secondary index from %s", SECONDARY_IDX_FILE)
-        starttime = time.process_time()
-        with open(os.path.join(self.index_dir, SECONDARY_IDX_FILE), 'r') as fp:
-            self.secondary_index = eval(fp.read())
-        log.debug("Secondary index loaded in %s sec", time.process_time() - starttime)
-
     def mmap_primary_index(self):
         log.debug("Memory mapping primary index from %s", PRIMARY_IDX_FILE)
 
@@ -164,67 +108,54 @@ class Search:
         self.secondary_fp = open(os.path.join(self.index_dir, SECONDARY_IDX_FILE_OFFSETVERSION), 'r')
         log.debug("Pointer to secondary index file opened. Non-mmapped version")
 
-    def load_primary_block(self, block_to_load):
-        log.debug("Loading primary block from %s", block_to_load)
-        starttime = time.process_time()
-
-        # TODO: Do not load if already loaded
-        if self.nameofBlockCurrentlyInMemory == block_to_load:
-            log.debug("Block %s already in memory", block_to_load)
-            return
-
-        log.debug("Block %s not in memory. Loading!!!", block_to_load)
-        self.index.clear()
-        with open(os.path.join(self.index_dir, block_to_load), 'r') as fp:
-            for line in fp:
-                line = line.strip()
-                term, postings = line.split(TERM_POSTINGLIST_SEP)
-                for unit in postings.split(DOCIDS_SEP):
-                    docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
-                    zones = {}
-                    for zone_tf in zones_tf_pairs.split(ZONES_SEP):
-                        zone, ztf = zone_tf.split(ZONE_ZFREQ_SEP)
-                        zones[zone] = ztf
-                    self.index[term].append((docid, freq, zones))
-            self.nameofBlockCurrentlyInMemory = block_to_load
-        log.debug("Primary block loaded in %s sec", time.process_time() - starttime)
-
-    def get_postinglist(self, term):
+    def get_postinglist(self, term, queryzone=None):
+        """Returns first FEW terms from term's postings list"""
         log.debug("Fetching postings for term: %s", term)
         start_time = time.process_time()
-        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
-            primary_blk_suffix = bisect(self.secondary_index,
-                                        (term, "z"))  # FIXME: added "z" to match higher than primaryX
-            self.load_primary_block(f"{PRIMARY_BLK_PREFIX}{primary_blk_suffix}")
-            log.debug("Fetched postings in: %s", time.process_time() - start_time)
-            return self.index[term]
-        else:  # INDEX_TO_USE=="OFFSET"
-            offset = self.get_term_offset(term)
-            if offset == -1:  # No such term in index
-                return []
 
-            self.prim_idx_fp.seek(offset)  # seek to postings location
+        offset = self.get_term_offset(term)
+        if offset == -1:  # No such term in index
+            return []
 
-            res = []
+        self.prim_idx_fp.seek(offset)  # seek to postings location
 
-            line = self.prim_idx_fp.readline()
-            log.debug("Fetched postings in: %s", time.process_time() - start_time)
+        res = []
 
-            build_start = time.process_time()
+        line = self.prim_idx_fp.readline()
+        log.debug("Fetched postings in: %s", time.process_time() - start_time)
 
-            line = line.decode("utf-8")
-            line = line.rstrip()
-            term, postings = line.split(TERM_POSTINGLIST_SEP)
+        build_start = time.process_time()
 
-            for unit in postings.split(DOCIDS_SEP)[:5000]:  # STOPSHIP limit to just 100 find better value
-                docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
-                zones = {}
-                for zone_tf_pair in zones_tf_pairs.split(ZONES_SEP):
-                    zone, ztf = zone_tf_pair.split(ZONE_ZFREQ_SEP)
-                    zones[zone] = ztf
-                res.append((docid, freq, zones))
+        line = line.decode("utf-8")
+        line = line.rstrip()
+        term, postings = line.split(TERM_POSTINGLIST_SEP)
+
+        # STOPSHIP limit to first FEW entries of postings list.
+        for unit in postings.split(DOCIDS_SEP):
+            docid, freq, zones_tf_pairs = unit.split(DOCID_TF_ZONES_SEP)
+            zones = {}
+            for zone_tf_pair in zones_tf_pairs.split(ZONES_SEP):
+                zone, ztf = zone_tf_pair.split(ZONE_ZFREQ_SEP)
+                zones[zone] = int(ztf)
+
+            if queryzone and queryzone not in zones:
+                # if query asks for a specific zone
+                # make sure to only include postings which have that zone
+                continue
+
+            # zone_score = 0
+            # for z in zones:
+            #     zone_score += zones[z] * zone_weights[z.upper()]
+
+            # rank the postings by zone based scoring
+            # so that we only return FEW good postings
+            res.append((docid, freq, zones))
+            # res.append((zone_score, docid, freq, zones))
+
+            # res = [(docid, freq, zones) for zonescore, docid, freq, zones in sorted(res, reverse=True)[:15000]]
+            res.reverse()
             log.debug("Built postings in: %s", time.process_time() - build_start)
-            return res
+        return res[:5000]
 
     def get_term_offset(self, term):
         log.debug("Getting offset for %s", term)
@@ -265,12 +196,9 @@ class Search:
         log.debug("Doc info loaded in: %s sec", time.process_time() - start_time)
 
         start_time = time.process_time()
-        if INDEX_TO_USE == INDEX_TYPE_BLOCK:
-            self.load_secondary_index()  # TODO: check correctness
-        elif INDEX_TO_USE == INDEX_TYPE_OFFSET:
-            self.load_tertiary_map()
-            self.mmap_secondary_index()
-            self.mmap_primary_index()
+        self.load_tertiary_map()
+        self.mmap_secondary_index()
+        self.mmap_primary_index()
 
         log.info("Loading indexes completed in %s seconds", time.process_time() - start_time)
 
@@ -303,8 +231,8 @@ class Search:
         queryfp.close()
         outputfp.close()
 
-        if INDEX_TO_USE == INDEX_TYPE_OFFSET:
-            self.prim_idx_fp.close()
+        self.prim_idx_fp.close()
+        self.secondary_fp.close()
 
     def one_word_query(self, query):
         terms = self.get_terms(query)
@@ -321,9 +249,10 @@ class Search:
         if len(postingslist) == 0:
             return results
 
-        for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
+        for docid, tf, zones in postingslist:
             n_terms = self.get_n_terms(docid)
-            tf_idf_score = float(tf) * self.get_idf(len(postingslist))
+            tf = int(tf)
+            tf_idf_score = tf * self.get_idf(len(postingslist))
             results.append((tf_idf_score / n_terms, docid))
 
         docids = [docid for tfidf, docid in sorted(results, reverse=True)[:10]]
@@ -335,7 +264,7 @@ class Search:
         for i, term in enumerate(terms):
             postingslist = self.get_postinglist(term)
             for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
-                tf = float(tf)  # length normalize the document vector
+                tf = int(tf)  # length normalize the document vector
                 tf = log10(1 + tf) / log10(self.get_n_terms(docid))
                 df = len(postingslist)
 
@@ -380,14 +309,14 @@ class Search:
                 term = term[0]
 
             # get posting for term
-            postingslist = self.get_postinglist(term)
+            postingslist = self.get_postinglist(term, field_type_map[cur_field])
 
             for docid, tf, zones in postingslist:  # TODO: limit to  iterate through 1000 only
                 if field_type_map[cur_field] not in zones:
                     continue
 
                 # else this doc has this term in the required zone
-                tf = log10(1 + float(tf)) / log10(self.get_n_terms(docid))
+                tf = log10(1 + int(tf)) / log10(self.get_n_terms(docid))
                 df = len(postingslist)
                 # Wtd = log(1+tf) * log(N/df)
                 wtd = tf * log10(self.N_DOCS / df)
