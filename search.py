@@ -63,7 +63,7 @@ class Search:
             for line in fp:
                 line = line.strip()
                 term, offset = line.split(TERM_OFFSET_SEP)
-                tertiary_offset_list.append((term, offset))
+                tertiary_offset_list.append((term, int(offset)))
                 # self.term_offset_dict[term] = offset
         self.tertiary_offset_list = tuple(tertiary_offset_list)
         tertiary_offset_list.clear()
